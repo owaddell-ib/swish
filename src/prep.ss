@@ -41,3 +41,29 @@
     ))
 
 (#%$print-pass-stats)
+
+#!eof
+
+* this works (remember to clean build dir first)
+   0. rm build/release/lib/swish/* build/release/bin/*.library
+   1. cd src
+   2. ./prep
+   3. cd ..
+   4. make
+
+* this also works
+   0. rm build/release/lib/swish/* build/release/bin/*.library
+   1. cd src
+   2. ./prep
+   2. ./go
+   3. cd ..
+   4. make
+
+* BUT if you forget to clean the swish-core.library, you'll get an error message:
+
+make -C src/swish all
+swish-core.library is up to date
+compiling swish/events.ss
+ looking for ../build/release/lib/swish/events.sx
+attempting to use ../build/release/lib/swish/events.sx
+Exception: compiled (swish events) requires a different compilation instance of (swish meta) from the one previously loaded from ../build/release/bin/swish-core.library

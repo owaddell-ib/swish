@@ -116,6 +116,7 @@ clean: platform-clean
 	rm -f ../../${BUILD}/bin/swish.library
 	rm -f ../../${BUILD}/bin/swish.wpo
 	rm -f ../../${BUILD}/lib/swish/*.so
+	rm -f ../../${BUILD}/lib/swish/*.sx
 	rm -f ../../${BUILD}/lib/swish/*.wpo
 	rm -f ${SwishLibs}
 	rm -f ${SHLIBTEST}

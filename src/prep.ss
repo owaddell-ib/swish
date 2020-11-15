@@ -29,13 +29,19 @@
   (let* ([filename "hack-log-id-output.fasl"]
          [_ (delete-file filename)] ;; can't remember file-options stuff for open-file-output-port
          [op (open-file-output-port filename)])
-    ;; takes 5.23 sec if we do it this way and generates a 17Mb file
-    ;; (#%$hack-log-id (lambda x (fasl-write x op)))
-    ;; by contrast, we get a file of 500Kb and it takes just 2.1 sec if we accumulate
-    ;; and write it at the end so we get the benefit of fasl commonization for the
-    ;; various source annotations, I reckon
+    ;; generates a much smaller file if we accumulate the results and do a
+    ;; single fasl-write vs. multiple fasl-writes since the former commonizes
+    ;; source objects
     (define ls '())
-    (#%$hack-log-id (lambda x (set! ls (cons x ls))))
+    (define (log! x) (set! ls (cons x ls)))
+    (#%$hack-log-id
+     (case-lambda
+      [(x0 x1 x2)
+       ;; ref, set!
+       (log! (vector x0 x1 x2))]
+      [(x0 x1 x2 x3)
+       ;; primref, primset!, tl-ref, tl-set!, lambda, letrec, letrec*
+       (log! (vector x0 x1 x2 x3))]))
     (eval '(import (swish imports)))
     (fasl-write (reverse ls) op)
     ))

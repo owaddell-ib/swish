@@ -1,0 +1,65 @@
+#! /usr/bin/env swish
+
+(define cli
+  (cli-specs
+   default-help
+   [all? -a --all bool "show everything"]
+   [ref? -r --ref bool "show lexical references"]
+   [set? -s --set bool "show lexical assignments"]
+   [tl-ref? --tl-ref bool "show top-level references"]
+   [tl-set? --tl-set bool "show top-level assignments"]
+   [primref? -p --primref bool "show primitive references"]
+   [primset? --primset bool "show primitive assignments"]
+   [lambda? -l --lambda bool "show lambda"]
+   [letrec? -R --letrec bool "show letrec"]
+   [inputs (list "<filename>" ...) "files to read"]))
+
+(define opt (parse-command-line-arguments cli))
+
+(define all? (opt 'all?))
+(define ref? (opt 'ref?))
+(define set? (opt 'set?))
+(define primref? (opt 'primref?))
+(define primset? (opt 'primset?))
+(define tl-ref? (opt 'tl-ref?))
+(define tl-set? (opt 'tl-set?))
+(define lambda? (opt 'lambda?))
+(define letrec? (opt 'letrec?))
+
+(define (dump x)
+  (if all?
+      (pretty-print x)
+      (match x
+        [#(ref ,ref-src ,prelex-src)
+         (when ref? (pretty-print x))]
+        [#(set! ,set-src ,prelex-src)
+         (when set? (pretty-print x))]
+        [#(primref ,primref-src ,name ,meta-level)
+         (when primref? (pretty-print x))]
+        [#(primset! ,primset-src ,name ,meta-level)
+         (when primset? (pretty-print x))]
+        [#(tl-ref ,ref-src ,name ,meta-level)
+         (when tl-ref? (pretty-print x))]
+        [#(tl-set! ,set-src ,name ,meta-level)
+         (when tl-set? (pretty-print x))]
+        [#(lambda ,src ,formals ,meta-level)
+         (when lambda? (pretty-print x))]
+        [#(letrec ,src ,bound-vars ,meta-level)
+         (when letrec? (pretty-print x))]
+        [#(letrec* ,src ,bound-vars ,meta-level)
+         (when letrec? (pretty-print x))])))
+
+(when (opt 'help)
+  (display-help (app:name) cli)
+  (exit))
+
+(unless (opt 'inputs)
+  (display-usage "usage:" (app:name) cli)
+  (exit))
+
+(for-each
+ (lambda (filename)
+   (define ip (open-binary-file-to-read filename))
+   (on-exit (close-port ip)
+     (for-each dump (fasl-read ip))))
+ (opt 'inputs))

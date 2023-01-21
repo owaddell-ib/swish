@@ -88,7 +88,18 @@
        ;;           need in order to distinguish them
        ;;       --> is there some way we can link the macro-argument source expression
        ;;           with the source on the pattern variable within the macro?
-       ;; 
+       ;;               
+       ;;  TODO YET ANOTHER IDEA
+       ;;    - what if we had separate source-tables?
+       ;;       - one for prelexes
+       ;;         - this could be our structure that records lists of refs and sets
+       ;;           where each element in those lists is a token
+       ;;       - one for refs and sets
+       ;;         - this could be a map from source -> token
+       ;;         - we'd have to invert the mapping when we load the source table
+       ;;           so we have token -> source and then we can use tokens within the prelex
+       ;;           table
+       ;;
       [(context src x2 x3)
        (void)
        #;                               

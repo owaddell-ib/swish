@@ -34,14 +34,34 @@
 
   ;; see RFC 4648 https://tools.ietf.org/html/rfc4648
 
-  (define pad (char->integer #\=))
-  (define (pad? b) (fx= b pad))
+  (include "unsafe.ss")
+  (define-syntax (define-unsafe x)
+    (define unsafe-prims
+      '(bytevector-length
+        bytevector-s8-ref
+        bytevector-truncate!
+        bytevector-u16-set!
+        bytevector-u24-ref
+        bytevector-u24-set!
+        bytevector-u32-set!
+        bytevector-u8-ref
+        bytevector-u8-set!
+        fx+ fx< fx= fx>= fxlogand fxlogor fxsll fxsra))
+    (syntax-case x ()
+      [(kwd (proc arg ...) body0 body1 ...)
+       (with-syntax ([(unsafe-prim ...) (datum->syntax #'kwd unsafe-prims)])
+         #'(module (proc)
+             (declare-unsafe-primitives unsafe-prim ...)
+             (define (proc arg ...) body0 body1 ...)))]))
 
-  (define (base64-encoded-size in-size)
+  (define pad (char->integer #\=))
+  (define-unsafe (pad? b) (fx= b pad))
+
+  (define-unsafe (base64-encoded-size in-size)
     (let-values ([(d m) (fxdiv-and-mod in-size 3)])
       (fx* 4 (if (fx= m 0) d (fx+ d 1)))))
 
-  (define (base64-decoded-size in-size)
+  (define-unsafe (base64-decoded-size in-size)
     (fx* 3 (fx/ in-size 4)))
 
   (define-syntax define-encoding
@@ -94,40 +114,40 @@
     (base64-decode bv base64url-decoding 'base64url-decode-bytevector))
 
   ;; RFC 4648 recommends rejecting bad inputs
-  (define (base64-decode bv decoding who)
-    (define input-size (#3%bytevector-length bv))
+  (define-unsafe (base64-decode bv decoding who)
+    (define input-size (bytevector-length bv))
     (unless (fxzero? (fxremainder input-size 4))
       (bad-arg who bv))
     (if (fx= input-size 0)
         '#vu8()
         (let ([end (fx- input-size 4)]
               [out (make-bytevector (base64-decoded-size input-size))])
-          (define (get i offset) (#3%bytevector-s8-ref bv (fx+ i offset)))
+          (define (get i offset) (bytevector-s8-ref bv (fx+ i offset)))
           (define (check bits) (if (fx>= bits 0) bits (bad-arg who bv)))
-          (define (shift bits offset) (#3%fxsll bits (- 24 (* 6 (+ offset 1)))))
+          (define (shift bits offset) (fxsll bits (- 24 (* 6 (+ offset 1)))))
           (define (extract-bytes i) (values (get i 0) (get i 1) (get i 2) (get i 3)))
-          (define (->bits byte) (#3%bytevector-s8-ref decoding byte))
+          (define (->bits byte) (bytevector-s8-ref decoding byte))
           (define (pad-or-bits byte) (if (fx= byte pad) 0 (->bits byte)))
           (define (check-get-bits byte) (check (->bits byte)))
           (define (combine check-get-bits a b c d)
-            (#3%fxlogor
+            (fxlogor
              (shift (check (->bits a)) 0)
              (shift (check-get-bits b) 1)
              (shift (check-get-bits c) 2)
              (shift (check-get-bits d) 3)))
           (define (finish i j)
             (let-values ([(a b c d) (extract-bytes i)])
-              (#3%bytevector-u24-set! out j (combine pad-or-bits a b c d) 'big)
+              (bytevector-u24-set! out j (combine pad-or-bits a b c d) 'big)
               (cond
                [(pad? b) (bad-arg who bv)] ;; already checked a
                [(pad? c)
                 (unless (pad? d) (bad-arg who bv))
-                (#3%bytevector-truncate! out (fx+ j 1))]
+                (bytevector-truncate! out (fx+ j 1))]
                [(pad? d)
-                (#3%bytevector-truncate! out (fx+ j 2))])))
+                (bytevector-truncate! out (fx+ j 2))])))
           (do ([i 0 (fx+ i 4)] [j 0 (fx+ j 3)]) ((fx= i end) (finish i j))
             (let-values ([(a b c d) (extract-bytes i)])
-              (#3%bytevector-u24-set! out j (combine check-get-bits a b c d) 'big)))
+              (bytevector-u24-set! out j (combine check-get-bits a b c d) 'big)))
           out)))
 
   (define (base64-encode-bytevector bv)
@@ -138,62 +158,62 @@
     (arg-check 'base64url-encode-bytevector [bv bytevector?])
     (base64-encode bv base64url-encoding))
 
-  (define (base64-encode bv encoding)
-    (define input-size (#3%bytevector-length bv))
+  (define-unsafe (base64-encode bv encoding)
+    (define input-size (bytevector-length bv))
     (if (fx= input-size 0)
         '#vu8()
         (let ([out (make-bytevector (base64-encoded-size input-size))])
           (define (write-encoded base in)
-            (let ([bits (#3%bytevector-u24-ref bv in 'big)])
+            (let ([bits (bytevector-u24-ref bv in 'big)])
               (meta-cond
                [(< (integer-length (most-positive-fixnum)) 32)
-                (#3%bytevector-u16-set! out base
-                  (#3%fxlogor
-                   (#3%fxsll (translate bits 3/4) 8)
-                   (#3%fxsll (translate bits 2/4) 0))
+                (bytevector-u16-set! out base
+                  (fxlogor
+                   (fxsll (translate bits 3/4) 8)
+                   (fxsll (translate bits 2/4) 0))
                   'big)
-                (#3%bytevector-u16-set! out (fx+ base 2)
-                  (#3%fxlogor
-                   (#3%fxsll (translate bits 1/4) 8)
-                   (#3%fxsll (translate bits 0/4) 0))
+                (bytevector-u16-set! out (fx+ base 2)
+                  (fxlogor
+                   (fxsll (translate bits 1/4) 8)
+                   (fxsll (translate bits 0/4) 0))
                   'big)]
                [else
-                (#3%bytevector-u32-set! out base
-                  (#3%fxlogor
-                   (#3%fxsll (translate bits 3/4) 24)
-                   (#3%fxsll (translate bits 2/4) 16)
-                   (#3%fxsll (translate bits 1/4) 8)
-                   (#3%fxsll (translate bits 0/4) 0))
+                (bytevector-u32-set! out base
+                  (fxlogor
+                   (fxsll (translate bits 3/4) 24)
+                   (fxsll (translate bits 2/4) 16)
+                   (fxsll (translate bits 1/4) 8)
+                   (fxsll (translate bits 0/4) 0))
                   'big)])))
           (define (write-padded base bits n)
             (set base 0 bits 3/4)
             (set base 1 bits 2/4)
             (if (= n 1)
                 (set base 2 bits 1/4)
-                (#3%bytevector-u8-set! out (#3%fx+ base 2) pad))
-            (#3%bytevector-u8-set! out (#3%fx+ base 3) pad))
+                (bytevector-u8-set! out (fx+ base 2) pad))
+            (bytevector-u8-set! out (fx+ base 3) pad))
           (define (set base offset bits shift)
-            (#3%bytevector-u8-set! out (#3%fx+ base offset)
+            (bytevector-u8-set! out (fx+ base offset)
               (translate bits shift)))
           (define (translate bits shift)
-            (#3%bytevector-u8-ref encoding
-              (#3%fxlogand (#3%fxsra bits (* 24 shift)) #x3F)))
+            (bytevector-u8-ref encoding
+              (fxlogand (fxsra bits (* 24 shift)) #x3F)))
           (define (get-bits i)
-            (#3%fxlogor
+            (fxlogor
              (get i 16)
-             (get (#3%fx+ i 1) 8)
-             (get (#3%fx+ i 2) 0)))
+             (get (fx+ i 1) 8)
+             (get (fx+ i 2) 0)))
           (define (get i shift)
-            (if (#3%fx>= i input-size)
+            (if (fx>= i input-size)
                 0
-                (#3%fxsll (#3%bytevector-u8-ref bv i) shift)))
+                (fxsll (bytevector-u8-ref bv i) shift)))
           (let loop ([in 0] [base 0])
-            (let ([next (#3%fx+ in 3)])
+            (let ([next (fx+ in 3)])
               (cond
-               [(#3%fx< next input-size)
+               [(fx< next input-size)
                 (write-encoded base in)
-                (loop next (#3%fx+ base 4))]
-               [(#3%fx= next input-size)
+                (loop next (fx+ base 4))]
+               [(fx= next input-size)
                 (write-encoded base in)]
                [else
                 (write-padded base (get-bits in) (- next input-size))])))

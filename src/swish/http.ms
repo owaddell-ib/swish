@@ -232,7 +232,7 @@
 (define-tuple <result> reason details output)
 
 (define (flush-errors)
-  (receive (after 10 'ok)
+  (test:receive (after 10 'ok)
     [`(<child-end>) (flush-errors)]))
 
 (define (test-error&output input)
@@ -242,7 +242,7 @@
                      output
                      (utf8->string output))])
     (let lp ([best #f])
-      (receive (after 100 (<result> make [reason best] [details best] [output output]))
+      (test:receive (after 100 (<result> make [reason best] [details best] [output output]))
         [`(<child-end> [reason normal])
          (lp (or best 'normal))]
         [`(<child-end> ,reason ,details)

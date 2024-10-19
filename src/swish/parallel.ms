@@ -291,18 +291,19 @@
          (shared))))))
 
 (parallel-mat concurrent ()
+  (define upper-limit (scale-timeout 1111))
   ;; The time to run these in parallel should be close to the time to
   ;; run the slowest expression and less than the sum of all the
   ;; times.
   (match-let*
-   ([(,t (1 2 3 4)) (guard (< 999 t 1111))
+   ([(,t (1 2 3 4)) (guard (< 999 t upper-limit))
      (texp
       (parallel ()
         (receive (after 1000 1))
         (receive (after 100 2))
         (receive (after 10 3))
         (receive (after 1 4))))]
-    [(,t (1 2 3 4)) (guard (< 999 t 1111))
+    [(,t (1 2 3 4)) (guard (< 999 t upper-limit))
      (texp
       (parallel:map
        (lambda (t v)

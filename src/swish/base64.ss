@@ -122,12 +122,12 @@
         '#vu8()
         (let ([end (fx- input-size 4)]
               [out (make-bytevector (base64-decoded-size input-size))])
-          (define (get i offset) (bytevector-s8-ref bv (fx+ i offset)))
+          (define (get i offset) (bytevector-u8-ref bv (fx+ i offset)))
           (define (check bits) (if (fx>= bits 0) bits (bad-arg who bv)))
           (define (shift bits offset) (fxsll bits (- 24 (* 6 (+ offset 1)))))
           (define (extract-bytes i) (values (get i 0) (get i 1) (get i 2) (get i 3)))
           (define (->bits byte) (bytevector-s8-ref decoding byte))
-          (define (pad-or-bits byte) (if (fx= byte pad) 0 (->bits byte)))
+          (define (pad-or-bits byte) (if (fx= byte pad) 0 (check-get-bits byte)))
           (define (check-get-bits byte) (check (->bits byte)))
           (define (combine check-get-bits a b c d)
             (fxlogor

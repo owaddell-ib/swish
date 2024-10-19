@@ -185,5 +185,10 @@
     [,bad (string->utf8 "soBAD===")]
     [#(EXIT #(bad-arg base64-decode-bytevector ,@bad)) (catch (base64-decode-bytevector bad))]
     [#(EXIT #(bad-arg base64url-decode-bytevector ,@bad)) (catch (base64url-decode-bytevector bad))]
+    [#vu8(1) (base64-decode-bytevector #vu8(65 81 61 61))]
+    [,bad #vu8(65 81 61 255)]
+    [#(EXIT #(bad-arg base64-decode-bytevector ,@bad)) (catch (base64-decode-bytevector bad))]
+    [,bad #vu8(65 81 61 126)]
+    [#(EXIT #(bad-arg base64-decode-bytevector ,@bad)) (catch (base64-decode-bytevector bad))]
     )
    'ok))

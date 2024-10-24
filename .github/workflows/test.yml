@@ -126,6 +126,8 @@ jobs:
         run: git config --global core.autocrlf false
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
         # the checkout action wipes the workarea, so do the checkout
         # *before* we restore and build Chez Scheme from cache
       - name: Restore Chez Scheme .git / boot file cache
@@ -207,6 +209,7 @@ jobs:
         if: ${{ matrix.config.chez != 'main' && !startsWith(matrix.config.machine, 't') }}
         # install only the binaries and replace absolute symlinks with relative symlinks
         run: |
+          git fetch --tags
           make -C src/swish install-bin INSTALLROOT="${PWD}/build/swish"
           for f in $(find build/swish -type l); do
             target="$(realpath "$f")"

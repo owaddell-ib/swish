@@ -105,7 +105,7 @@
 
 (isolate-mat version ()
   (swish-build-test '("--version")
-    '("swish-build Version (?:\\d+\\.){2}\\d+ \\([[:xdigit:]dirty-]+\\)")))
+    '("swish-build Version (?:\\d+\\.){2}\\d+(?:-\\d+)?(?:-dirty)? \\([[:xdigit:]dirty-]+\\)")))
 
 (isolate-mat info ()
   (swish-build-test '("--info")

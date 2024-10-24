@@ -33,6 +33,7 @@
 /sqlite3.obj
 /swish-revision.include
 /swish-version.include
+/swish-version.mk
 /swish_kernel.o
 /test-request.dll
 /test-request.dylib

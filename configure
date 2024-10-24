@@ -348,8 +348,6 @@ elif [ "${Windows}" = "no" ]; then
   err "Missing Chez Scheme kernel.o or libkernel.a"
 fi
 
-SWISH_VERSION=$(sed -n 's/^#define SWISH_VERSION \([0-9a-z."]*\)/\1/p' src/swish/swish.h)
-
 escape_backslash() { printf "%s" "$1" | sed 's_\\_\\\\_g' ; }
 ADD_TO=
 add() {
@@ -429,7 +427,6 @@ else
 fi
 add "SWISH_INCLUDE:=${SWISH_INCLUDE}"
 add "SWISH_LIBPATH:=${SWISH_LIBPATH}"
-add "SWISH_VERSION:=${SWISH_VERSION}"
 add "LIBUV_INCLUDE:=${LIBUV_INCLUDE}"
 add "LIBUV_LIBPATH:=${LIBUV_LIBPATH}"
 add "SQLITE_SRCPATH:=${SQLITE_SRCPATH}"

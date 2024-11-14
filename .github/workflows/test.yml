@@ -60,10 +60,10 @@ jobs:
       matrix:
         config:
           - machine: a6osx
-            os: macos-12
+            os: macos-13
             chez: v9.6.4
           - machine: a6osx
-            os: macos-12
+            os: macos-13
             chez: main
           - machine: arm64osx
             os: macos-14

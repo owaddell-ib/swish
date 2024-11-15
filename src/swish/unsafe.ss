@@ -27,15 +27,21 @@
 ;; that breaks "#!eof mats" since they run after we evaluate boot.ss and poison
 ;; $import-internal.
 
-;; Use with care. Build with UNSAFE_PRIMITIVES=no to disable.
-(define-syntax declare-unsafe-primitives
-  (if (equal? (getenv "UNSAFE_PRIMITIVES") "no")
-      (syntax-rules () [(_ ...) (begin)])
-      (syntax-rules ()
-        [(_ prim ...)
-         (begin
-           (define-syntax prim (identifier-syntax ($primitive 3 prim)))
-           ...)])))
+(module (declare-unsafe-primitives)
+  (import (swish meta))
+  ;; Use with care. Build with UNSAFE_PRIMITIVES=no to disable.
+  (define-syntax declare-unsafe-primitives
+    (if (equal? (getenv "UNSAFE_PRIMITIVES") "no")
+        (syntax-rules () [(_ ...) (begin)])
+        (syntax-rules ()
+          [(_ prim ...)
+           (begin
+             ;; TODO consider some mode that would report, in a format suitable for Swish Lint, where we referenced unsafe primitives.
+             (define-syntax prim
+               (make-notify-transformer "Unsafe!"
+                 (identifier-syntax ($primitive 3 prim))))
+             ...)])))
+  )
 
 ;; Use with care. Unlike with-interrupts-disabled, no-interrupts is unsafe if
 ;; body forms can raise an exception.

@@ -30,6 +30,7 @@
    find-clause
    find-source
    get-clause
+   make-notify-transformer
    not-reached
    pretty-syntax-violation
    profile-me
@@ -133,6 +134,28 @@
     (if (contains? (syntax->datum key) bindings)
         bindings
         #`((#,key #,value) #,@bindings)))
+
+  (define (make-notify-transformer message transformer)
+    (cond
+     [(getenv "SWISH_NOTIFY") => ;; TODO RENAME!
+      (lambda (notify-file)
+        (lambda (x)
+          (let ([annotation (syntax->annotation x)])
+            (when annotation
+              (call-with-values
+                (lambda ()
+                  (locate-source-object-source
+                   (annotation-source annotation) #t #f))
+                (case-lambda
+                 [(path line col)
+                  (with-output-to-file notify-file
+                    (lambda ()
+                      (printf "{\"message\": ~s, \"line\": ~s, \"column\": ~s, \"path\": ~s}\n"
+                        message line col path))
+                    'append)]
+                 [() (void)]))))
+          (transformer x)))]
+     [else transformer]))
 
   (module (replace-source)
     ;; TODO implement replace-source upstream where we don't have to

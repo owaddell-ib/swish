@@ -81,7 +81,10 @@
   (software-version 'chezscheme
     (let-syntax ([scheme-version
                   (lambda (x)
-                    (format "~{~a~^.~}" (call-with-values scheme-version-number list)))])
+                    (format "~{~a~^.~}~@[-pre-release.~a~]"
+                      (call-with-values scheme-version-number list)
+                      (and (top-level-bound? 'scheme-pre-release)
+                           (eval '(scheme-pre-release)))))])
       scheme-version))
   (software-revision 'chezscheme
     (include-line "swish/chezscheme-revision.include"))
@@ -120,7 +123,11 @@
     ["Swish" (software-product-name)]
     ["Foo" (software-product-name 'foo)]
     [,_ (json:delete! (software-info) 'foo)] ;; try to keep foo out of coverage report
-    [,cs-version (scheme-version)]
+    [,cs-version
+     (format "~a~@[-pre-release.~a~]"
+       (scheme-version)
+       (and (top-level-bound? 'scheme-pre-release)
+            (eval '(scheme-pre-release))))]
     [,@cs-version
      (parameterize ([app:name "chezscheme"])
        (format "~a Version ~a"

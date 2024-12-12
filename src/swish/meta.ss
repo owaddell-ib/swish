@@ -139,21 +139,29 @@
     (cond
      [(getenv "SWISH_NOTIFY") => ;; TODO RENAME!
       (lambda (notify-file)
+        ;; TODO BUG HACK fix this; maybe compile using an existing build of Swish and pass in
+        ;;      a handler that knows how to write data safely
+        (define (notify! message path start-line start-col end-line end-col)
+          (with-output-to-file notify-file
+            (lambda ()
+              (printf "{\"message\": ~s, \"start-line\": ~s, \"start-column\": ~s, \"end-line\": ~s, \"end-column\": ~s, \"path\": ~s}\n"
+                message start-line start-col end-line end-col path))
+            'append))
+        (define (with-source source start? proc)
+          (call-with-values
+            (lambda () (locate-source-object-source source start? #t))
+            (case-lambda
+             [(path line col) (proc path line col)]
+             [() (void)])))
         (lambda (x)
           (let ([annotation (syntax->annotation x)])
             (when annotation
-              (call-with-values
-                (lambda ()
-                  (locate-source-object-source
-                   (annotation-source annotation) #t #f))
-                (case-lambda
-                 [(path line col)
-                  (with-output-to-file notify-file
-                    (lambda ()
-                      (printf "{\"message\": ~s, \"line\": ~s, \"column\": ~s, \"path\": ~s}\n"
-                        message line col path))
-                    'append)]
-                 [() (void)]))))
+              (let ([source (annotation-source annotation)])
+                (with-source source #t
+                  (lambda (path start-line start-col)
+                    (with-source source #f
+                      (lambda (_ end-line end-col)
+                        (notify! message path start-line start-col end-line end-col))))))))
           (transformer x)))]
      [else transformer]))
 

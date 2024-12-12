@@ -30,6 +30,8 @@ jobs:
       - if: ${{ steps.build-restore-bootfiles.outputs.cache-hit != 'true' }}
         name: Populate boot file cache
         run: |
+          sudo apt-get update
+          sudo apt-get install libsystemd-dev libx11-dev uuid-dev
           cd ChezScheme
           git checkout v9.6.4
           ./configure -m=a6le
@@ -110,12 +112,12 @@ jobs:
           sudo dpkg --add-architecture i386
           sudo apt-get update
           sudo apt-get install gcc-multilib lib32ncurses5-dev\
-            libsystemd-dev:i386 uuid-dev:i386
+            libsystemd-dev:i386 libx11-dev:i386 uuid-dev:i386
       - name: Setup 64-bit Linux
         if: ${{ endsWith(matrix.config.machine, 'a6le') }}
         run: |
           sudo apt-get update
-          sudo apt-get install libsystemd-dev
+          sudo apt-get install libsystemd-dev libx11-dev uuid-dev
       - name: Setup Mac
         if: ${{ runner.os == 'macOS' }}
         run: |

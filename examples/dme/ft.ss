@@ -1,9 +1,10 @@
 ;; SPDX-License-Identifier: MIT
 ;; Copyright 2024 Indigo BioAutomation, Inc.
 
+#!chezscheme
 (library (ft)
   (export ft)
-  (import (scheme) (swish erlang) (swish meta))
+  (import (scheme) (swish erlang) (swish meta) (swish string-utils))
 
   (define-syntax ft (lambda (x) (syntax-error x "invalid context for")))
 
@@ -18,6 +19,11 @@
        (eq? 'ft (datum ft))
        #'type]))
 
+  (meta define (fld->path fld)
+    (datum->syntax #'fld
+      (map string->symbol
+        (split (symbol->string (syntax->datum fld)) #\.))))
+
   (define-match-extension ft
     ;; handle-object
     (lambda (v pattern)
@@ -30,7 +36,7 @@
     (lambda (v fld var options context)
       (let ([type (context->type context)]) ;; TODO not sure how fragile this is
         (syntax-case options ()
-          [() #`((bind #,var (ftype-ref #,type (#,fld) #,v)))]
+          [() #`((bind #,var (ftype-ref #,type #,(fld->path fld) #,v)))]
           [else (pretty-syntax-violation "invalid options" context options)]))))
 
   )

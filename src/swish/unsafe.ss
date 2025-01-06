@@ -39,6 +39,12 @@
              ;; TODO consider some mode that would report, in a format suitable for Swish Lint, where we referenced unsafe primitives.
              (define-syntax prim
                (make-notify-transformer "Unsafe!"
+                 (lambda (x)
+                   (if (identifier? x)
+                       x
+                       (syntax-case x ()
+                         [(id . _) (identifier? #'id) #'id]
+                         [_ #f])))
                  (identifier-syntax ($primitive 3 prim))))
              ...)])))
   )

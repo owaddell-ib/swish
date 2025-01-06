@@ -135,7 +135,7 @@
         bindings
         #`((#,key #,value) #,@bindings)))
 
-  (define (make-notify-transformer message transformer)
+  (define (make-notify-transformer message extract-form transformer)
     (cond
      [(getenv "SWISH_NOTIFY") => ;; TODO RENAME!
       (lambda (notify-file)
@@ -154,7 +154,7 @@
              [(path line col) (proc path line col)]
              [() (void)])))
         (lambda (x)
-          (let ([annotation (syntax->annotation x)])
+          (let ([annotation (syntax->annotation (extract-form x))])
             (when annotation
               (let ([source (annotation-source annotation)])
                 (with-source source #t

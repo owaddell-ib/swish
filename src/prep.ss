@@ -41,7 +41,7 @@
           (let ([cell (source-table-cell st src category)])
             (assert (eq? category (cdr cell)))
             cell)))
-    (#%$hack-log-id
+    (#%$report-source-info
      (case-lambda
       [(context src prelex-src)
        ;; ref, set!
@@ -64,7 +64,7 @@
                  [(set!)
                   (lexical-assignments-set! info
                     (cons elt (lexical-assignments info)))]
-                 [else (errorf 'hack-log-id "unexpected context ~s" context)]))))]
+                 [else (errorf 'report-source-info "unexpected context ~s" context)]))))]
        ;;
        ;;                                                                       
        ;;  TODO LEFT OFF HERE
@@ -107,7 +107,7 @@
        (log! src (vector src x2 x3))]))
     (eval '(import (swish imports)))
     ;; Stick with Chez Scheme primitives here (we haven't built Swish yet)
-    (let* ([filename "hack-log-id-output.source-table"]
+    (let* ([filename "report-source-info-output.source-table"]
            [!! (delete-file filename)]
            [op (open-output-file filename)])
       (printf "~s entries w/o src\n" (length no-src))

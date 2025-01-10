@@ -42,6 +42,13 @@
             (assert (eq? category (cdr cell)))
             cell)))
     (#%$report-source-info
+     ;; The stuff commented out below was broken exploration, just print stuff for now.
+     (case-lambda
+      [(context src prelex-src)
+       (printf "~s src=~s prelex-src=~s\n" context src prelex-src)]
+      [(context src x2 x3)
+       (printf "~s src=~s x2=~s x3=~s\n" context src x2 x3)])
+     #;           
      (case-lambda
       [(context src prelex-src)
        ;; ref, set!

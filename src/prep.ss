@@ -47,7 +47,10 @@
       [(context src prelex-src)
        (printf "~s src=~s prelex-src=~s\n" context src prelex-src)]
       [(context src x2 x3)
-       (printf "~s src=~s x2=~s x3=~s\n" context src x2 x3)])
+       (printf "~s src=~s x2=~s x3=~s\n" context src x2 x3)]
+      [x
+       (printf "Looks like I'm HACKING:~{ ~s~}\n" x)]
+      )
      #;           
      (case-lambda
       [(context src prelex-src)
@@ -124,6 +127,13 @@
           (fprintf op "\n#!eof\n")
           (pretty-print no-src op))
         (lambda () (close-port op))))))
+
+(let ([sm-info* (getprop 'HACK 'FIXME #f)]) ;; TODO HACK FIXME
+  (when sm-info*
+    (let ([op (open-file-output-port "/tmp/var-info.fasl" (file-options replace))])
+      (fasl-write sm-info* op)
+      (close-port op)
+      (printf "wrote ~s\n" (port-name op)))))
 
 (#%$print-pass-stats)
 

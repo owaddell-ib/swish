@@ -41,88 +41,27 @@
           (let ([cell (source-table-cell st src category)])
             (assert (eq? category (cdr cell)))
             cell)))
+    ;; TODO temp disable so we can see how long it takes
     (#%$report-source-info
-     ;; The stuff commented out below was broken exploration, just print stuff for now.
-     (case-lambda
-      [(hack sm-info*)
-       (assert (eq? hack 'source-map))
-       (let ([op (open-file-output-port "/tmp/var-info.fasl" (file-options replace))])
-         (fasl-write sm-info* op)
-         (close-port op)
-         (printf "wrote ~s\n" (port-name op)))]
-      [(context src prelex-src)
-       (void) #;    
-       (printf "~s src=~s prelex-src=~s\n" context src prelex-src)]
-      [(context src x2 x3)
-       (void) #;    
-       (printf "~s src=~s x2=~s x3=~s\n" context src x2 x3)]
-      [x
-       (printf "Looks like I'm HACKING:~{ ~s~}\n" x)]
-      )
-     #;           
-     (case-lambda
-      [(context src prelex-src)
-       ;; ref, set!
-       (let ([elt (find! src context)])
-         (if (not prelex-src)
-             ;; TODO could commonize no-src elts
-             (set! no-src (cons elt no-src))
-             (let* ([cell (source-table-cell st prelex-src #f)]
-                    [info (or (cdr cell)
-                              (let ([info (make-lexical)])
-                                (set-cdr! cell info)
-                                info))])
-               (unless (lexical? info)
-                 (errorf #f "expected lexical, but got ~s for src=~s prelex-src=~s"
-                   info src prelex-src))  
-               (case context
-                 [(ref)
-                  (lexical-references-set! info
-                    (cons elt (lexical-references info)))]
-                 [(set!)
-                  (lexical-assignments-set! info
-                    (cons elt (lexical-assignments info)))]
-                 [else (errorf 'report-source-info "unexpected context ~s" context)]))))]
-       ;;
-       ;;                                                                       
-       ;;  TODO LEFT OFF HERE
-       ;;  --> instead we should be creating def-use chain here
-       ;;      maybe we have a struct with:
-       ;;      source-table mapping src -> info-about-binding
-       ;;        then info-about-binding has:
-       ;;           refs
-       ;;           sets
-       ;;        and we store some kind of symbolic ref to those
-       ;;        or a graph ref to the corresponding source-table cell?
-       ;;                                                                       
-       ;;
-       ;; BUG  ponder confusing sourcerer output, e.g., we get a (context src prelex-src)
-       ;;      where context is 'ref and *both* src and prelex-src point to the same thing:
-       ;;      #<source swish/osi.ss[5063:5069]>
-       ;;       --> probably because the macro is taking a single piece of source and
-       ;;           plunking it down both as lambda formals and as reference to that formal
-       ;;           but the macro uses the same identifier both times, so they have the same
-       ;;           source and sourcerer doesn't (yet?) have a notion of the prelex that we
-       ;;           need in order to distinguish them
-       ;;       --> is there some way we can link the macro-argument source expression
-       ;;           with the source on the pattern variable within the macro?
-       ;;               
-       ;;  TODO YET ANOTHER IDEA
-       ;;    - what if we had separate source-tables?
-       ;;       - one for prelexes
-       ;;         - this could be our structure that records lists of refs and sets
-       ;;           where each element in those lists is a token
-       ;;       - one for refs and sets
-       ;;         - this could be a map from source -> token
-       ;;         - we'd have to invert the mapping when we load the source table
-       ;;           so we have token -> source and then we can use tokens within the prelex
-       ;;           table
-       ;;
-      [(context src x2 x3)
-       (void)
-       #;                               
-       ;; primref, primset!, tl-ref, tl-set!, lambda, letrec, letrec*
-       (log! src (vector src x2 x3))]))
+     (let ([filename "/tmp/source-map.fasl"])
+       (define (dump op what data)
+         ;; TODO guessing this might be a convenient format for Chris: read to get category, read to get data
+         (fasl-write what op)
+         (fasl-write data op))
+       (delete-file filename)
+       (lambda (lexical* global* prim* contour* realm* syntax*)
+         (let ([op (open-file-output-port filename (file-options no-fail no-truncate))])
+           (file-position op (file-length op))
+           ;; TODO currently dumping source map each time Scheme calls the report-source-info hook
+           ;;      but we could instead build up a list of the results and fasl-write it all at once
+           ;;      to make it more compact.
+           (dump op 'lexical lexical*)
+           (dump op 'global global*)
+           (dump op 'prim prim*)
+           (dump op 'syntax syntax*)
+           (dump op 'contour contour*)
+           (dump op 'realm realm*)
+           (close-port op)))))
     (eval '(import (swish imports)))
     ;; Stick with Chez Scheme primitives here (we haven't built Swish yet)
     (let* ([filename "report-source-info-output.source-table"]

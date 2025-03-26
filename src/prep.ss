@@ -16,8 +16,9 @@
                                    'release)]
                         [sep (directory-separator)])
                     (library-directories
-                     `(("." . ,(format "~a~cbuild~c~a~clib"
+                     `((,(cd) . ,(format "~a~cbuild~c~a~clib"
                                  base sep sep which sep)))))
+                  (source-directories (map (lambda (x) (if (equal? x ".") (cd) x)) (source-directories)))
                   (include "osi-bootstrap.ss")
                   void)])
   (void))

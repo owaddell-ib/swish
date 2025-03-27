@@ -45,12 +45,13 @@
     ;; TODO temp disable so we can see how long it takes
     (#%$report-source-info
      (let ([filename "/tmp/source-map.fasl"])
+       (define HACK 0)
        (define (dump op what data)
          ;; TODO guessing this might be a convenient format for Chris: read to get category, read to get data
          (fasl-write what op)
          (fasl-write data op))
        (delete-file filename)
-       (lambda (lexical* global* prim* contour* realm* syntax*)
+       (lambda (lexical* global* prim* contour* realm* imports-ht syntax*)
          (let ([op (open-file-output-port filename (file-options no-fail no-truncate))])
            (file-position op (file-length op))
            ;; TODO currently dumping source map each time Scheme calls the report-source-info hook
@@ -62,7 +63,16 @@
            (dump op 'syntax syntax*)
            (dump op 'contour contour*)
            (dump op 'realm realm*)
-           (close-port op)))))
+           (dump op 'imports-ht imports-ht)
+           (close-port op)
+   
+           (let ([op (open-file-output-port (format "/tmp/sm-~s.fasl" HACK))])
+             (printf "writing output to ~s\n" (port-name op)) 
+             (set! HACK (+ HACK 1))
+             (dump op 'lexical lexical*)
+             (close-port op))
+   
+           ))))
     (eval '(import (swish imports)))
     ;; Stick with Chez Scheme primitives here (we haven't built Swish yet)
     (let* ([filename "report-source-info-output.source-table"]

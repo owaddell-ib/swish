@@ -66,6 +66,8 @@
            (dump op 'imports-ht imports-ht)
            (close-port op)
    
+           ;; This is for me to investigate where we're getting extra lexical-info's
+           #;       
            (let ([op (open-file-output-port (format "/tmp/sm-~s.fasl" HACK))])
              (printf "writing output to ~s\n" (port-name op)) 
              (set! HACK (+ HACK 1))

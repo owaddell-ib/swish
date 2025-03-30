@@ -51,7 +51,9 @@
          (fasl-write what op)
          (fasl-write data op))
        (delete-file filename)
-       (lambda (lexical* global* prim* contour* realm* imports-ht syntax*)
+       (lambda (
+                outfn ;; TODO temporary debugging aid                  
+                lexical* global* prim* contour* realm* imports-ht syntax*)
          (let ([op (open-file-output-port filename (file-options no-fail no-truncate))])
            (file-position op (file-length op))
            ;; TODO currently dumping source map each time Scheme calls the report-source-info hook
@@ -67,11 +69,16 @@
            (close-port op)
    
            ;; This is for me to investigate where we're getting extra lexical-info's
-           #;       
            (let ([op (open-file-output-port (format "/tmp/sm-~s.fasl" HACK))])
-             (printf "writing output to ~s\n" (port-name op)) 
+             (printf "writing output to ~s for ~s\n" (port-name op) outfn)   
              (set! HACK (+ HACK 1))
              (dump op 'lexical lexical*)
+             (dump op 'global global*)
+             (dump op 'prim prim*)
+             (dump op 'syntax syntax*)
+             (dump op 'contour contour*)
+             (dump op 'realm realm*)
+             (dump op 'imports-ht imports-ht)
              (close-port op))
    
            ))))

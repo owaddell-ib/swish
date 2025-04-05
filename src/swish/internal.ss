@@ -20,6 +20,7 @@
 ;;; OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 ;;; DEALINGS IN THE SOFTWARE.
 
+#!chezscheme
 (library (swish internal)
   (export $import-internal)
   (import (scheme))
@@ -92,6 +93,9 @@
              #'(void))]
           [(_ id ...)
            (and allowed? (andmap identifier? #'(id ...)))
-           (with-syntax ([(rhs ...) (datum->syntax #'$import-internal (datum (id ...)))])
+           (with-syntax ([(rhs ...)
+                          (map (lambda (new orig) (#%$replace-source orig new))
+                            (syntax->list (datum->syntax #'$import-internal (datum (id ...))))
+                            (syntax->list #'(id ...)))])
              #'(begin (alias id rhs) ...))]))))
   )

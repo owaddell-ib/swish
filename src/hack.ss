@@ -6,6 +6,7 @@
 (define imports-db (make-hashtable symbol-hash eq?))
 (define realm-db (make-hashtable symbol-hash eq?))
 (define library-db (make-hashtable equal-hash equal?))
+(define *alias* '())
 (define whence-db (make-eq-hashtable))
 
 (define (whence! obj filename)
@@ -70,6 +71,7 @@
         [global (smash-global! filename (fasl-read ip)) (go)]
         [imports-ht (smash-imports! filename (fasl-read ip)) (go)]
         [realm (smash-realms! filename (fasl-read ip)) (go)]
+        [alias (set! *alias* (append (fasl-read ip) *alias*)) (go)]
         [#!eof (void)]
         [,other (printf "IGNORING ~s\n" other) (fasl-read ip) (go)]))))
 

@@ -6,7 +6,10 @@
 (define imports-db (make-hashtable symbol-hash eq?))
 (define realm-db (make-hashtable symbol-hash eq?))
 (define library-db (make-hashtable equal-hash equal?))
+(define syntax-db (make-hashtable symbol-hash eq?))
+(define prim-db (make-hashtable symbol-hash equal?))
 (define *alias* '())
+(define *contour* '())
 (define whence-db (make-eq-hashtable))
 
 (define (whence! obj filename)
@@ -62,6 +65,26 @@
        '()))
    realm*))
 
+(define (smash-syntax! filename siv)
+  (vector-for-each
+   (lambda (si)
+     (hashtable-update! syntax-db (syntax-info-name si)
+       (lambda (prev)
+         (whence! si filename)
+         (cons si prev))
+       '()))
+   siv))
+
+(define (smash-prim! filename piv)
+  (vector-for-each
+   (lambda (pi)
+     (hashtable-update! prim-db (prim-info-name pi)
+       (lambda (prev)
+         (whence! pi filename)
+         (cons pi prev))
+       '()))
+   piv))
+
 (define (slurp filename)
   (define ip (open-binary-file-to-read filename))
   (on-exit (close-port ip)
@@ -72,6 +95,9 @@
         [imports-ht (smash-imports! filename (fasl-read ip)) (go)]
         [realm (smash-realms! filename (fasl-read ip)) (go)]
         [alias (set! *alias* (append (fasl-read ip) *alias*)) (go)]
+        [contour (set! *contour* (append (fasl-read ip) *contour*)) (go)]
+        [syntax (smash-syntax! filename (fasl-read ip)) (go)]
+        [prim (smash-prim! filename (fasl-read ip)) (go)]
         [#!eof (void)]
         [,other (printf "IGNORING ~s\n" other) (fasl-read ip) (go)]))))
 
@@ -82,6 +108,23 @@
       (when (pregexp-match-positions (re ".*/sm-.*\\.fasl") filename)
         (printf "slurp: ~a\n" filename)
         (slurp filename)))))
+
+;; returns result of $extract-source, which
+;; currently returns multiple values:
+;;   1. a source-table mapping source location to symbol: call | case-lambda
+;;   2. a vector of lexical-info structures harvested from the file
+(define (get-source sx-file)
+  (let ([ip (open-binary-file-to-read sx-file)])
+    (on-exit (close-port ip)
+      (fasl-read ip) ;; recompile info
+      (fasl-read ip) ;; #t
+      (let ([lsrc (fasl-read ip)])
+        (assert (eof-object? (fasl-read ip)))
+        (#%$extract-source lsrc)))))
+
+(printf ";;  Example:
+;;   > (sm*)  ;; or (sm)
+;;   > (define-values (st bindings) (get-source \"../build/release/lib/swish/cli.sx\"))\n")
 
 (define (show id)
   (cond

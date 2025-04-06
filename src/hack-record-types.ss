@@ -32,7 +32,7 @@
     (immutable meta-level)
     (immutable bound*)))
 (define-record-type realm
-  (nongenerative #{realm ble5klpzns025alnatm0ydav9-5})
-  (fields (immutable src) (immutable name) (immutable path)
-    (immutable version) (immutable meta-level)
-    (immutable export*) (immutable import*)))
+  (nongenerative #{realm dk0h38d9wcwydof3f2dgd7w9h-0})
+  (fields
+   (immutable src) (immutable name) (immutable path) (immutable version) (immutable meta-level) (immutable export*) (immutable import*)
+   (immutable export-id*)))

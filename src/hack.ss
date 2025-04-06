@@ -113,6 +113,7 @@
 ;; currently returns multiple values:
 ;;   1. a source-table mapping source location to symbol: call | case-lambda
 ;;   2. a vector of lexical-info structures harvested from the file
+;;   3. a vector of global-info structures harvested from the file
 (define (get-source sx-file)
   (let ([ip (open-binary-file-to-read sx-file)])
     (on-exit (close-port ip)
@@ -124,7 +125,7 @@
 
 (printf ";;  Example:
 ;;   > (sm*)  ;; or (sm)
-;;   > (define-values (st bindings) (get-source \"../build/release/lib/swish/cli.sx\"))\n")
+;;   > (define-values (st locals globals) (get-source \"../build/release/lib/swish/cli.sx\"))\n")
 
 (define (show id)
   (cond

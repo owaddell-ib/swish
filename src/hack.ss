@@ -4,6 +4,7 @@
 (library (hack)
   (export
    add-globals!
+   add-imports!
    add-lexicals!
    add-realms!
    edge
@@ -144,29 +145,28 @@
                     #f)))
             (foreach ([ri realm*])
               (match-let*
-               ([`(realm ,src ,name ,path ,version ,meta-level ,export* ,import* ,export-id*) ri]
-                [,binding
-                 (cond
-                  [(not name)
-                   ;; TODO huh, this currently happens for define-enumeration
-                   ;;      maybe sourcerer should filter these out?
-                   (printf "No name: realm name=~s path=~s src=~s export*=~s\n" name path src export*)
-                   #f]
-                  [(HACK-lookup-module-node name) =>
-                   (lambda (prev*)
-                     (match prev*
-                       [(,prev)
-                        (when (node-src prev)
-                          (printf "Already processed realm-info for ~s\n  prior source: ~s\n  new source: ~s\n" name (node-src prev) src))
-                        (node-src-set! prev src)
-                        prev]))]
-                  [else (get-module-node name src)])])
-               ;; wire up the libraries / modules we imported
-               (foreach ([import-id import*])
-                 (add-module-edge! 'import binding
-                   ;; TODO WRONG: in this model we need a new "node" to represent the site of the import
-                   ;;      and then we need to fill in the source for it when we do smash-imports!
-                   (HACK-get-module-node import-id)))
+               ([`(realm ,src ,name ,path ,version ,meta-level ,export* ,import* ,export-id*) ri])
+               ;; TODO we should borrow Chris's notion of adding properties to nodes so we could record this stuff
+               ;;      - OTOH, nodes / edges might become the new representation if we can figure out what it should
+               ;;        look like by experimenting here
+               ;; TODO dropping perfectly good import* information on the floor
+               ;;      add-imports! will add the source links showing where we were imported
+               ;;      but the import* here show our connections to other libraries
+               ;;       - in theory we might be able to figure out which of the sources
+               ;;         we process in add-imports! exist within the bfp efp of the
+               ;;         library whose node we find by lookup up an id in import*
+               ;;       - but, I suspect we care about these links more for internal
+               ;;         stuff where server might show an import graph or something
+               (cond
+                [(not name)
+                 ;; TODO currently happens for things like define-enumeration
+                 (printf "no name for realm: src=~s path=~s export*=~s\n" src path export*)]
+                [(HACK-lookup-module-node name) =>
+                 (lambda (hits)
+                   (unless (= 1 (length hits)) (printf "processing realm ~s and found more than one node representing it: ~s\n" name hits))
+                   (foreach ([hit hits])
+                     (node-src-set! hit src)))]
+                [else (get-module-node name src)])
                ;; patch up the export-ids: find the node with no source and install the source we have
                ;; TODO maybe sourcerer should be resolving the source for export-id* for us:
                ;;      just give mapping of ((export-id . src) ...)
@@ -193,6 +193,30 @@
                       [else
                        (printf "---\ninstall new export ~s with source ~s\n" exported src)
                        (get-export exported src)])))))))))))
+
+  (define (add-imports! T import*)
+    (with-graph (tome-realms T)
+      (lambda (add-module-node! add-module-edge!)
+        ;; TODO see note in add-realms!
+        (define get-module-node (make-get-node 'realm add-module-node!))
+        (define (HACK-lookup-module-node name)
+          (hashtable-ref (graph-nodes (tome-realms T)) name #f))
+        (foreach ([id.src* import*])
+          (match-let*
+           ([(,id . ,src*) id.src*]
+            [,binding
+             (cond
+              [(HACK-lookup-module-node id) =>
+               (lambda (hits)
+                 (unless (= 1 (length hits))
+                   (printf "Uh, surprised to have found more than one node representing realm ~s: ~s\n" id hits))
+                 (car hits))]
+              [else
+               (printf "processing import src* for ~s before processing its realm\n" id)
+               ;; ... so we'll have to wire in its source later in add-realms!
+               (get-module-node id #f)])])
+           (foreach ([src src*])
+             (add-module-edge! 'import src binding)))))))
 
   )
 
@@ -239,6 +263,7 @@
    giv))
 
 (define (smash-imports! filename import-ht)
+  (add-imports! T (hashtable-cells import-ht))
   (vector-for-each
    (lambda (cell)
      (match-define (,key . ,src*) cell)
@@ -369,3 +394,10 @@
           [else (printf "not a realm, just: ~s\n" r)]))
        realm*))]
    [else (printf "found nothing for ~s\n" path)]))
+
+
+
+
+#!eof
+
+(match-define `(tome ,realms ,ids) T)

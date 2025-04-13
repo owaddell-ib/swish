@@ -7,6 +7,7 @@
    add-imports!
    add-lexicals!
    add-realms!
+   add-syntax!
    edge
    graph
    make-tome
@@ -65,7 +66,7 @@
     (define dedup (make-source-table))
     (define anon (make-hashtable symbol-hash eq?))
     (define (get-node name bind-src)
-      (let ([cell (if bind-src
+      (let ([cell (if (source-object? bind-src)
                       (source-table-cell dedup bind-src #f)
                       (hashtable-cell anon name #f))])
         (when (cdr cell) (printf ";; duplicate ~s binding for ~s at ~s\n" type name bind-src))
@@ -103,6 +104,17 @@
              (add-edge! 'ref (get-node name ref-src) binding))
            (foreach ([set-src set-src*])
              (add-edge! 'set (get-node name set-src) binding)))))))
+
+  (define (add-syntax! T syntax-info-v)
+    (with-graph (tome-ids T)
+      (lambda (add-node! add-edge!)
+        (define get-node (make-get-node 'syntax add-node!))
+        (foreach ([si syntax-info-v])
+          (match-let*
+           ([`(syntax-info ,name ,bind-src ,ref-src*) si] ;; TODO src-src* if we handle fluid-let-syntax
+            [,binding (get-node name bind-src)])
+           (foreach ([ref-src ref-src*])
+             (add-edge! 'ref (get-node name ref-src) binding)))))))
 
   (module HACK_BARF (dig-for-source)
     (define (dig-for-source x)
@@ -292,6 +304,7 @@
    realm*))
 
 (define (smash-syntax! filename siv)
+  (add-syntax! T siv)
   (vector-for-each
    (lambda (si)
      (hashtable-update! syntax-db (syntax-info-name si)

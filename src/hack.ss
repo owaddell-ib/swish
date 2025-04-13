@@ -1,6 +1,105 @@
 
 (include "hack-record-types.ss")
 
+(library (hack)
+  (export
+   add-globals!
+   add-lexicals!
+   edge
+   graph
+   make-graph
+   node
+   )
+  (import (scheme) (swish imports))
+  (include "hack-record-types.ss")
+  (define-syntax foreach
+    (syntax-rules ()
+      [(_ ([var collection*] ...) e0 e1 ...)
+       (let ([f (lambda (var ...) e0 e1 ...)]
+             [var collection*] ...)
+         (cond
+          [(and (vector? var) ...) (vector-for-each f var ...)]
+          [else (for-each f var ...)]))]))
+
+  (define-record-type node (nongenerative) (fields name type src))
+  (define-record-type edge (nongenerative) (fields type from to))
+  (define-record-type graph
+    (nongenerative)
+    (fields nodes in-edges out-edges)
+    (protocol
+     (lambda (new)
+       (lambda ()
+         (new
+          (make-hashtable symbol-hash eq?)
+          (make-eq-hashtable)
+          (make-eq-hashtable))))))
+
+  (define (hashtable-add! ht key elt)
+    (hashtable-update! ht key
+      (lambda (prev) (cons elt prev))
+      '()))
+
+  (define (with-graph g k)
+    (match-define `(graph ,nodes ,in-edges ,out-edges) g)
+    (define (add-node! name node)
+      (hashtable-add! nodes name node)
+      node)
+    (define (add-edge! type from to)
+      (let ([edge (make-edge type from to)])
+        (hashtable-add! out-edges from edge)
+        (hashtable-add! in-edges to edge)
+        edge))
+    (k add-node! add-edge!))
+
+  ;; BARF
+  (define (make-get-node type add-node!)
+    (define dedup (make-source-table))
+    (define anon (make-hashtable symbol-hash eq?))
+    (define (get-node name bind-src)
+      (let ([cell (if bind-src
+                      (source-table-cell dedup bind-src #f)
+                      (hashtable-cell anon name #f))])
+        (when (cdr cell) (printf ";; duplicate ~s binding for ~s at ~s\n" type name bind-src))
+        (or (cdr cell)
+            (let ([n (add-node! name (make-node name type bind-src))])
+              (set-cdr! cell n)
+              n))))
+    get-node)
+
+  (define (add-lexicals! g lex-info-v)
+    (with-graph g
+      (lambda (add-node! add-edge!)
+        (define get-node (make-get-node 'lexical add-node!))
+        (foreach ([li lex-info-v])
+          (match-let*
+           ([`(lexical-info ,name ,bind-src ,ref-src* ,set-src*) li]
+            [,binding (get-node name bind-src)])
+           (foreach ([ref-src ref-src*])
+             (add-edge! 'ref (get-node name ref-src) binding))
+           (foreach ([set-src set-src*])
+             (add-edge! 'set (get-node name set-src) binding)))))))
+
+  (define (add-globals! g global-info-v)
+    (with-graph g
+      (lambda (add-node! add-edge!)
+        (define get-node (make-get-node 'global add-node!))
+        (foreach ([gi global-info-v])
+          (match-let*
+           ([`(global-info ,name ,ref-src* ,set-src*) gi]
+            [,binding (get-node name
+                        (match set-src*
+                          [(,set-src) set-src]
+                          [,_ #f]))])
+           (foreach ([ref-src ref-src*])
+             (add-edge! 'ref (get-node name ref-src) binding))
+           (foreach ([set-src set-src*])
+             (add-edge! 'set (get-node name set-src) binding)))))))
+
+  )
+
+(import (hack))
+(define g (make-graph))
+
 (define lexical-db (make-hashtable symbol-hash eq?))
 (define global-db (make-hashtable symbol-hash eq?))
 (define imports-db (make-hashtable symbol-hash eq?))
@@ -19,6 +118,7 @@
   (hashtable-ref whence-db obj '()))
 
 (define (smash-lexical! filename liv)
+  (add-lexicals! g liv)
   (vector-for-each
    (lambda (li)
      (hashtable-update! lexical-db (lexical-info-name li)
@@ -29,6 +129,7 @@
    liv))
 
 (define (smash-global! filename giv)
+  (add-globals! g giv)
   (vector-for-each
    (lambda (gi)
      (hashtable-update! global-db (global-info-name gi)
@@ -122,6 +223,7 @@
       (let ([lsrc (fasl-read ip)])
         (assert (eof-object? (fasl-read ip)))
         (#%$extract-source lsrc)))))
+
 
 (printf ";;  Example:
 ;;   > (sm*)  ;; or (sm)

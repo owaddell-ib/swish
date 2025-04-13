@@ -150,7 +150,7 @@
                   [(not name)
                    ;; TODO huh, this currently happens for define-enumeration
                    ;;      maybe sourcerer should filter these out?
-                   (printf "Interesting: realm name=~s path=~s src=~s export*=~s\n" name path src export*)
+                   (printf "No name: realm name=~s path=~s src=~s export*=~s\n" name path src export*)
                    #f]
                   [(HACK-lookup-module-node name) =>
                    (lambda (prev*)
@@ -163,7 +163,10 @@
                   [else (get-module-node name src)])])
                ;; wire up the libraries / modules we imported
                (foreach ([import-id import*])
-                 (add-module-edge! 'import binding (HACK-get-module-node import-id)))
+                 (add-module-edge! 'import binding
+                   ;; TODO WRONG: in this model we need a new "node" to represent the site of the import
+                   ;;      and then we need to fill in the source for it when we do smash-imports!
+                   (HACK-get-module-node import-id)))
                ;; patch up the export-ids: find the node with no source and install the source we have
                ;; TODO maybe sourcerer should be resolving the source for export-id* for us:
                ;;      just give mapping of ((export-id . src) ...)
@@ -171,6 +174,7 @@
                (foreach ([export-id export-id*])
                  (match-let* ([(,exported . ,id) export-id]
                               [,src (dig-for-source id)]) ;; TODO see above
+                   (unless src (printf "no source for ~s export ~s on ~s\n" name exported id))
                    (when src
                      (cond
                       [(HACK-get-export exported) =>

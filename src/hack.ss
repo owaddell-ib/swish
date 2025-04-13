@@ -5,10 +5,12 @@
   (export
    add-globals!
    add-lexicals!
+   add-realms!
    edge
    graph
-   make-graph
+   make-tome
    node
+   tome
    )
   (import (scheme) (swish imports))
   (include "hack-record-types.ss")
@@ -21,18 +23,24 @@
           [(and (vector? var) ...) (vector-for-each f var ...)]
           [else (for-each f var ...)]))]))
 
-  (define-record-type node (nongenerative) (fields name type src))
+  (define-record-type node (nongenerative) (fields name type (mutable src)))
   (define-record-type edge (nongenerative) (fields type from to))
   (define-record-type graph
     (nongenerative)
     (fields nodes in-edges out-edges)
     (protocol
      (lambda (new)
+       (lambda (node-ht)
+         (new node-ht (make-eq-hashtable) (make-eq-hashtable))))))
+  (define-record-type tome
+    (nongenerative)
+    (fields realms ids)
+    (protocol
+     (lambda (new)
        (lambda ()
          (new
-          (make-hashtable symbol-hash eq?)
-          (make-eq-hashtable)
-          (make-eq-hashtable))))))
+          (make-graph (make-hashtable symbol-hash eq?))
+          (make-graph (make-hashtable symbol-hash eq?)))))))
 
   (define (hashtable-add! ht key elt)
     (hashtable-update! ht key
@@ -66,8 +74,8 @@
               n))))
     get-node)
 
-  (define (add-lexicals! g lex-info-v)
-    (with-graph g
+  (define (add-lexicals! T lex-info-v)
+    (with-graph (tome-ids T)
       (lambda (add-node! add-edge!)
         (define get-node (make-get-node 'lexical add-node!))
         (foreach ([li lex-info-v])
@@ -79,8 +87,8 @@
            (foreach ([set-src set-src*])
              (add-edge! 'set (get-node name set-src) binding)))))))
 
-  (define (add-globals! g global-info-v)
-    (with-graph g
+  (define (add-globals! T global-info-v)
+    (with-graph (tome-ids T)
       (lambda (add-node! add-edge!)
         (define get-node (make-get-node 'global add-node!))
         (foreach ([gi global-info-v])
@@ -95,10 +103,97 @@
            (foreach ([set-src set-src*])
              (add-edge! 'set (get-node name set-src) binding)))))))
 
+  (module HACK_BARF (dig-for-source)
+    (define (dig-for-source x)
+      (cond
+       [(annotation? x) (annotation-source x)]
+       [(identifier? x) (dig-for-source (syntax-object-expression x))]
+       [else #f]))
+    ;; ripped off from meta.ss
+    (define so-rtd (record-rtd #'_))
+    (define syntax-object? (record-predicate so-rtd))
+    (define make-syntax-object (record-constructor so-rtd))
+    (define flds (record-type-field-names so-rtd))
+    (define (make-accessor fld-name)
+      (let ([i (ormap (lambda (f i) (and (eq? f fld-name) i))
+                 (vector->list flds)
+                 (iota (vector-length flds)))])
+        (record-accessor so-rtd i)))
+    (define syntax-object-expression (make-accessor 'expression)))
+
+  (define (add-realms! T realm*)
+    (import HACK_BARF)
+    (with-graph (tome-realms T)
+      (lambda (add-module-node! add-module-edge!)
+        ;; TODO determine realm type by looking at realm-path
+        (define get-module-node (make-get-node 'realm add-module-node!))
+        (define (HACK-lookup-module-node name)
+          (hashtable-ref (graph-nodes (tome-realms T)) name #f))
+        (define (HACK-get-module-node name)
+          (or (HACK-lookup-module-node name)
+              (begin
+                (printf "Dang. Import of realm ~s before we processed its realm\n" name)
+                (get-module-node name #f))))
+        (with-graph (tome-ids T)
+          (lambda (add-node! add-edge!)
+            (define get-export (make-get-node 'global add-node!))
+            (define (HACK-get-export export-id)
+              (or (hashtable-ref (graph-nodes (tome-ids T)) export-id #f)
+                  (begin
+                    (printf "processed realm export ~s before references to it\n" export-id)
+                    #f)))
+            (foreach ([ri realm*])
+              (match-let*
+               ([`(realm ,src ,name ,path ,version ,meta-level ,export* ,import* ,export-id*) ri]
+                [,binding
+                 (cond
+                  [(not name)
+                   ;; TODO huh, this currently happens for define-enumeration
+                   ;;      maybe sourcerer should filter these out?
+                   (printf "Interesting: realm name=~s path=~s src=~s export*=~s\n" name path src export*)
+                   #f]
+                  [(HACK-lookup-module-node name) =>
+                   (lambda (prev*)
+                     (match prev*
+                       [(,prev)
+                        (when (node-src prev)
+                          (printf "Already processed realm-info for ~s\n  prior source: ~s\n  new source: ~s\n" name (node-src prev) src))
+                        (node-src-set! prev src)
+                        prev]))]
+                  [else (get-module-node name src)])])
+               ;; wire up the libraries / modules we imported
+               (foreach ([import-id import*])
+                 (add-module-edge! 'import binding (HACK-get-module-node import-id)))
+               ;; patch up the export-ids: find the node with no source and install the source we have
+               ;; TODO maybe sourcerer should be resolving the source for export-id* for us:
+               ;;      just give mapping of ((export-id . src) ...)
+               ;;      where src is the binding source for the lexical binding whose value we export
+               (foreach ([export-id export-id*])
+                 (match-let* ([(,exported . ,id) export-id]
+                              [,src (dig-for-source id)]) ;; TODO see above
+                   (when src
+                     (cond
+                      [(HACK-get-export exported) =>
+                       (lambda (export-node*)
+                         (printf "---\ntry to install source for export: ~s\n " exported)
+                         (printf "  found source ~s\n" src)
+                         (let ([missing-source* (filter (lambda (n) (not (node-src n))) export-node*)])
+                           (unless (= 1 (length missing-source*))
+                             ;; TODO if we hit this, maybe it's just that we've processed realm info for the same library multiple times
+                             ;;      for example, a library that we need at compile time and at run time
+                             (printf "Rats: we should have a single global assignment with no source (from build-library-body)\n")
+                             (printf "      but instead we have these:~{  ~s\n~}\n" missing-source*))
+                           (foreach ([export-node missing-source*])
+                             (printf "  existing node ~s\n" export-node)
+                             (node-src-set! export-node src))))]
+                      [else
+                       (printf "---\ninstall new export ~s with source ~s\n" exported src)
+                       (get-export exported src)])))))))))))
+
   )
 
 (import (hack))
-(define g (make-graph))
+(define T (make-tome))
 
 (define lexical-db (make-hashtable symbol-hash eq?))
 (define global-db (make-hashtable symbol-hash eq?))
@@ -118,7 +213,7 @@
   (hashtable-ref whence-db obj '()))
 
 (define (smash-lexical! filename liv)
-  (add-lexicals! g liv)
+  (add-lexicals! T liv)
   (vector-for-each
    (lambda (li)
      (hashtable-update! lexical-db (lexical-info-name li)
@@ -129,7 +224,7 @@
    liv))
 
 (define (smash-global! filename giv)
-  (add-globals! g giv)
+  (add-globals! T giv)
   (vector-for-each
    (lambda (gi)
      (hashtable-update! global-db (global-info-name gi)
@@ -151,6 +246,7 @@
    (hashtable-cells import-ht)))
 
 (define (smash-realms! filename realm*)
+  (add-realms! T realm*)
   (for-each
    (lambda (r)
      (match-define `(realm ,name ,path) r)

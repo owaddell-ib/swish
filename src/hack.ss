@@ -442,54 +442,58 @@
        realm*))]
    [else (printf "found nothing for ~s\n" path)]))
 
+;; alternative trying to use hack library
+(define info
+  (let ([rename (make-hashtable string-hash string=?)])
+    (define (init!)
+      (import (hack))
+      (match-define `(tome ,realms ,ids) T)
+      (match-define `(graph [nodes ,r-nodes] [in-edges ,r-in-edges] [out-edges ,r-out-edges]) realms)
+      (match-define `(graph [nodes ,id-nodes] [in-edges ,id-in-edges] [out-edges ,id-out-edges]) ids)
+      (define (raw-info id)
+        (define nodes (hashtable-ref id-nodes id '()))
+        ;; TODO some assumption wrong here
+        (define root (find (lambda (N) (not (hashtable-ref id-out-edges N #f))) nodes))
+        (dump id root nodes))
+      (define (dump id root nodes)
+        (match root
+          [`(node ,name ,type ,src)
+           (printf "~s ~s bound at ~s\n" name type src)
+           (printf " references:\n~:{   ~s ~s\n~}"
+             (map
+              (lambda (e)
+                (match e
+                  [`(edge ,type [from `(node ,src)]) (list type src)]
+                  [,_ (printf "NOT AN EDGE: ~s\n" e)]))
+              (hashtable-ref id-in-edges root '())))]
+          [,_
+           (when nodes
+             (printf "while looking for ~s: didn't find a root node (among ~s nodes)\n" id (length nodes))
+             (for-each
+              (lambda (N)
+                (for-each
+                 (lambda (E)
+                   (match E
+                     [`(edge ,from ,to) (dump id from #f)]))
+                 (hashtable-ref id-in-edges N '())))
+              nodes))])
+        (newline))
+      ;; translate raw names so we can lookup throw instead of #{throw m28beaodm9yu0orlbadpwg2cr-723}
+      (vector-for-each
+       (lambda (name)
+         (hashtable-add! rename (symbol->string name) name))
+       (hashtable-keys id-nodes))
+      raw-info)
+    (define raw-info #f)
+    (lambda (id)
+      (unless raw-info (set! raw-info (init!))) ;; BARF
+      (let ([cooked (hashtable-ref rename (symbol->string id) '())])
+        (raw-info id)
+        (for-each raw-info (remq id cooked))))))
 
 
 
 #!eof
-
-(match-define `(tome ,realms ,ids) T)
-(match-define `(graph [nodes ,r-nodes] [in-edges ,r-in-edges] [out-edges ,r-out-edges]) realms)
-(match-define `(graph [nodes ,id-nodes] [in-edges ,id-in-edges] [out-edges ,id-out-edges]) ids)
-
-(define info
-  (let ([rename (make-hashtable string-hash string=?)])
-    (define (raw-info id)
-      (define nodes (hashtable-ref id-nodes id '()))
-      ;; TODO some assumption wrong here
-      (define root (find (lambda (N) (not (hashtable-ref id-out-edges N #f))) nodes))
-      (dump id root nodes))
-    (define (dump id root nodes)
-      (match root
-        [`(node ,name ,type ,src)
-         (printf "~s ~s bound at ~s\n" name type src)
-         (printf " references:\n~:{   ~s ~s\n~}"
-           (map
-            (lambda (e)
-              (match e
-                [`(edge ,type [from `(node ,src)]) (list type src)]
-                [,_ (printf "NOT AN EDGE: ~s\n" e)]))
-            (hashtable-ref id-in-edges root '())))]
-        [,_
-         (when nodes
-           (printf "while looking for ~s: didn't find a root node (among ~s nodes)\n" id (length nodes))
-           (for-each
-            (lambda (N)
-              (for-each
-               (lambda (E)
-                 (match E
-                   [`(edge ,from ,to) (dump id from #f)]))
-               (hashtable-ref id-in-edges N '())))
-            nodes))])
-      (newline))
-    ;; translate raw names so we can lookup throw instead of #{throw m28beaodm9yu0orlbadpwg2cr-723}
-    (vector-for-each
-     (lambda (name)
-       (hashtable-add! rename (symbol->string name) name))
-     (hashtable-keys id-nodes))
-    (lambda (id)
-      (let ([cooked (hashtable-ref rename (symbol->string id) '())])
-        (raw-info id)
-        (for-each raw-info (remq id cooked))))))
 
 ;; doesn't do well yet with:
 ;;  (info 'throw)    ;; doesn't link up the bind-src

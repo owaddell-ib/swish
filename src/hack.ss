@@ -465,7 +465,10 @@
   (let ([rename (make-hashtable string-hash string=?)])
     (define (raw-info id)
       (define nodes (hashtable-ref id-nodes id '()))
+      ;; TODO some assumption wrong here
       (define root (find (lambda (N) (not (hashtable-ref id-out-edges N #f))) nodes))
+      (dump id root nodes))
+    (define (dump id root nodes)
       (match root
         [`(node ,name ,type ,src)
          (printf "~s ~s bound at ~s\n" name type src)
@@ -476,7 +479,17 @@
                 [`(edge ,type [from `(node ,src)]) (list type src)]
                 [,_ (printf "NOT AN EDGE: ~s\n" e)]))
             (hashtable-ref id-in-edges root '())))]
-        [,_ (printf "while looking for ~s: didn't find a root node (among ~s nodes)\n" id (length nodes))])
+        [,_
+         (when nodes
+           (printf "while looking for ~s: didn't find a root node (among ~s nodes)\n" id (length nodes))
+           (for-each
+            (lambda (N)
+              (for-each
+               (lambda (E)
+                 (match E
+                   [`(edge ,from ,to) (dump id from #f)]))
+               (hashtable-ref id-in-edges N '())))
+            nodes))])
       (newline))
     ;; translate raw names so we can lookup throw instead of #{throw m28beaodm9yu0orlbadpwg2cr-723}
     (vector-for-each

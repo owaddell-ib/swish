@@ -51,7 +51,7 @@
       (lambda (prev) (cons elt prev))
       '()))
 
-  (define (with-graph g k)
+  (define (with-graph g node-type k)
     (match-define `(graph ,nodes ,in-edges ,out-edges) g)
     (define (add-node! name node)
       (hashtable-add! nodes name node)
@@ -61,62 +61,55 @@
         (hashtable-add! out-edges from edge)
         (hashtable-add! in-edges to edge)
         edge))
-    (k add-node! add-edge!))
-
-  ;; BARF
-  (define (make-get-node type add-node!)
     (define dedup (make-source-table))
     (define anon (make-hashtable symbol-hash eq?))
-    (define (get-node name bind-src)
-      (let ([cell (if (source-object? bind-src)
-                      (source-table-cell dedup bind-src #f)
-                      (hashtable-cell anon name #f))])
-        (when (cdr cell) (printf ";; duplicate ~s binding for ~s at ~s\n" type name bind-src))
-        (or (cdr cell)
-            (let ([n (add-node! name (make-node name type bind-src))])
-              (set-cdr! cell n)
-              n))))
-    get-node)
+    (define (get-node name x src)
+      (let ([n (add-node! name (make-node name node-type src))])
+        ;; TODO misguided to try deduplicating the binding but not the reference
+        (if (or (not x) (not (source-object? src)))
+            n
+            (let ([cell (source-table-cell dedup src #f)])
+              (when (cdr cell) (printf ";; duplicate ~s binding for ~s at ~s (meta level?)\n" node-type name src))
+              (or (cdr cell)
+                  (begin (set-cdr! cell n) n))))))
+    (k add-node! add-edge! get-node))
 
   (define (add-lexicals! T lex-info-v)
-    (with-graph (tome-ids T)
-      (lambda (add-node! add-edge!)
-        (define get-node (make-get-node 'lexical add-node!))
+    (with-graph (tome-ids T) 'lexical
+      (lambda (add-node! add-edge! get-node)
         (foreach ([li lex-info-v])
           (match-let*
            ([`(lexical-info ,name ,bind-src ,ref-src* ,set-src*) li]
-            [,binding (get-node name bind-src)])
+            [,binding (get-node name li bind-src)])
            (foreach ([ref-src ref-src*])
-             (add-edge! 'ref (get-node name ref-src) binding))
+             (add-edge! 'ref (get-node name #f ref-src) binding))
            (foreach ([set-src set-src*])
-             (add-edge! 'set (get-node name set-src) binding)))))))
+             (add-edge! 'set (get-node name #f set-src) binding)))))))
 
   (define (add-globals! T global-info-v)
-    (with-graph (tome-ids T)
-      (lambda (add-node! add-edge!)
-        (define get-node (make-get-node 'global add-node!))
+    (with-graph (tome-ids T) 'global
+      (lambda (add-node! add-edge! get-node)
         (foreach ([gi global-info-v])
           (match-let*
            ([`(global-info ,name ,ref-src* ,set-src*) gi]
-            [,binding (get-node name
+            [,binding (get-node name gi
                         (match set-src*
                           [(,set-src) set-src]
                           [,_ #f]))])
            (foreach ([ref-src ref-src*])
-             (add-edge! 'ref (get-node name ref-src) binding))
+             (add-edge! 'ref (get-node name #f ref-src) binding))
            (foreach ([set-src set-src*])
-             (add-edge! 'set (get-node name set-src) binding)))))))
+             (add-edge! 'set (get-node name #f set-src) binding)))))))
 
   (define (add-syntax! T syntax-info-v)
-    (with-graph (tome-ids T)
-      (lambda (add-node! add-edge!)
-        (define get-node (make-get-node 'syntax add-node!))
+    (with-graph (tome-ids T) 'syntax
+      (lambda (add-node! add-edge! get-node)
         (foreach ([si syntax-info-v])
           (match-let*
            ([`(syntax-info ,name ,bind-src ,ref-src*) si] ;; TODO src-src* if we handle fluid-let-syntax
-            [,binding (get-node name bind-src)])
+            [,binding (get-node name si bind-src)])
            (foreach ([ref-src ref-src*])
-             (add-edge! 'ref (get-node name ref-src) binding)))))))
+             (add-edge! 'ref (get-node name #f ref-src) binding)))))))
 
   (module HACK_BARF (dig-for-source)
     (define (dig-for-source x)
@@ -138,20 +131,18 @@
 
   (define (add-realms! T realm*)
     (import HACK_BARF)
-    (with-graph (tome-realms T)
-      (lambda (add-module-node! add-module-edge!)
-        ;; TODO determine realm type by looking at realm-path
-        (define get-module-node (make-get-node 'realm add-module-node!))
+    (with-graph (tome-realms T) 'realm
+      ;; TODO determine realm type by looking at realm-path ?
+      (lambda (add-module-node! add-module-edge! get-module-node)
         (define (HACK-lookup-module-node name)
           (hashtable-ref (graph-nodes (tome-realms T)) name #f))
         (define (HACK-get-module-node name)
           (or (HACK-lookup-module-node name)
               (begin
                 (printf "Dang. Import of realm ~s before we processed its realm\n" name)
-                (get-module-node name #f))))
-        (with-graph (tome-ids T)
-          (lambda (add-node! add-edge!)
-            (define get-export (make-get-node 'global add-node!))
+                (get-module-node name #f #f))))
+        (with-graph (tome-ids T) 'global
+          (lambda (add-node! add-edge! get-export)
             (define (HACK-get-export export-id)
               (or (hashtable-ref (graph-nodes (tome-ids T)) export-id #f)
                   (begin
@@ -180,7 +171,7 @@
                    (unless (= 1 (length hits)) (printf "processing realm ~s and found more than one node representing it: ~s\n" name hits))
                    (foreach ([hit hits])
                      (node-src-set! hit src)))]
-                [else (get-module-node name src)])
+                [else (get-module-node name ri src)])
                ;; patch up the export-ids: find the node with no source and install the source we have
                ;; TODO maybe sourcerer should be resolving the source for export-id* for us:
                ;;      just give mapping of ((export-id . src) ...)
@@ -206,13 +197,12 @@
                              (node-src-set! export-node src))))]
                       [else
                        (printf "---\ninstall new export ~s with source ~s\n" exported src)
-                       (get-export exported src)])))))))))))
+                       (get-export exported #f src)])))))))))))
 
   (define (add-imports! T import*)
-    (with-graph (tome-realms T)
-      (lambda (add-module-node! add-module-edge!)
+    (with-graph (tome-realms T) 'realm
+      (lambda (add-module-node! add-module-edge! get-module-node)
         ;; TODO see note in add-realms!
-        (define get-module-node (make-get-node 'realm add-module-node!))
         (define (HACK-lookup-module-node name)
           (hashtable-ref (graph-nodes (tome-realms T)) name #f))
         (foreach ([id.src* import*])
@@ -228,7 +218,7 @@
               [else
                (printf "processing import src* for ~s before processing its realm\n" id)
                ;; ... so we'll have to wire in its source later in add-realms!
-               (get-module-node id #f)])])
+               (get-module-node id #f #f)])])
            (foreach ([src src*])
              (add-module-edge! 'import src binding)))))))
 

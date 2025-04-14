@@ -9,7 +9,9 @@
    add-realms!
    add-syntax!
    edge
+   foreach          ;;; HACK  should come from elsewhere
    graph
+   hashtable-add!   ;;; HACK tired of writing this confounded thing
    make-tome
    node
    tome
@@ -241,6 +243,7 @@
 (define realm-db (make-hashtable symbol-hash eq?))
 (define library-db (make-hashtable equal-hash equal?))
 (define syntax-db (make-hashtable symbol-hash eq?))
+(define syntax-raw-before-rewiring (make-hashtable symbol-hash eq?))
 (define prim-db (make-hashtable symbol-hash equal?))
 (define *alias* '())
 (define *contour* '())
@@ -304,15 +307,55 @@
    realm*))
 
 (define (smash-syntax! filename siv)
-  (add-syntax! T siv)
   (vector-for-each
+   (lambda (x)
+     (define-values (key val)
+       (match x
+         [(,key . ,val) (values key val)]
+         [`(syntax-info ,name) (values name x)]))
+     ;; TODO not thrilled about s/syntax.ss having to exposing the raw label (car cell) for us here
+     ;;      but we need that to link things together in link-syntax! later
+     ;; TODO maybe Chez Scheme will end up exposing some kind of extend-source-map! or some such
+     ;;      that takes stuff and magically "merges" it with another source map to resolve those links
+     (hashtable-update! syntax-raw-before-rewiring key
+       (lambda (prev) (cons val prev))
+       '()))
+   siv))
+
+;; post-pass to consolidate syntax-infos that had the same label over in syntax.ss
+(define (link-syntax!)
+  (define sinfos '())
+  (foreach ([cell (hashtable-cells syntax-raw-before-rewiring)])
+    (match-define (,label . ,nodes) cell)
+    (define levels (make-hashtable values fx=))
+    (foreach ([node nodes])
+      (hashtable-add! levels (syntax-info-meta-level node) node))
+    (foreach ([level.group (hashtable-cells levels)])
+      (match-define (,level . ,group) level.group)
+      (let gather ([group group] [name #f] [bind-src #f] [ref-src* '()])
+        (match group
+          [() (set! sinfos (cons (make-syntax-info name bind-src level ref-src*) sinfos))]
+          [(,si . ,group)
+           (let ([name (or name (syntax-info-name si))]
+                 [bind-src (or bind-src
+                               (let ([src (syntax-info-bind-src si)])
+                                 (cond
+                                  [(gensym? src)
+                                   (printf "in theory we could use ~s to find source\n" src)
+                                   ;; instead let the loop find it
+                                   #f]
+                                  [else src])))])
+             (gather group name bind-src
+               (append (syntax-info-ref-src* si) ref-src*)))]))))
+  (add-syntax! T sinfos)
+  (for-each
    (lambda (si)
      (hashtable-update! syntax-db (syntax-info-name si)
        (lambda (prev)
-         (whence! si filename)
+;;;         (whence! si filename)
          (cons si prev))
        '()))
-   siv))
+   sinfos))
 
 (define (smash-prim! filename piv)
   (vector-for-each
@@ -340,13 +383,14 @@
         [#!eof (void)]
         [,other (printf "IGNORING ~s\n" other) (fasl-read ip) (go)]))))
 
-(define (sm) (slurp "/tmp/source-map.fasl"))
+(define (sm) (slurp "/tmp/source-map.fasl") (link-syntax!))
 (define (sm*)
   (fold-files "/tmp" #f (lambda (dir) #f)
     (lambda (filename _)
       (when (pregexp-match-positions (re ".*/sm-.*\\.fasl") filename)
         (printf "slurp: ~a\n" filename)
-        (slurp filename)))))
+        (slurp filename))))
+  (link-syntax!))
 
 ;; returns result of $extract-source, which
 ;; currently returns multiple values:
@@ -414,3 +458,35 @@
 #!eof
 
 (match-define `(tome ,realms ,ids) T)
+(match-define `(graph [nodes ,r-nodes] [in-edges ,r-in-edges] [out-edges ,r-out-edges]) realms)
+(match-define `(graph [nodes ,id-nodes] [in-edges ,id-in-edges] [out-edges ,id-out-edges]) ids)
+
+(define info
+  (let ([rename (make-hashtable string-hash string=?)])
+    (define (raw-info id)
+      (define nodes (hashtable-ref id-nodes id '()))
+      (define root (find (lambda (N) (not (hashtable-ref id-out-edges N #f))) nodes))
+      (match root
+        [`(node ,name ,type ,src)
+         (printf "~s ~s bound at ~s\n" name type src)
+         (printf " references:\n~:{   ~s ~s\n~}"
+           (map
+            (lambda (e)
+              (match e
+                [`(edge ,type [from `(node ,src)]) (list type src)]
+                [,_ (printf "NOT AN EDGE: ~s\n" e)]))
+            (hashtable-ref id-in-edges root '())))]
+        [,_ (printf "while looking for ~s: didn't find a root node (among ~s nodes)\n" id (length nodes))])
+      (newline))
+    ;; translate raw names so we can lookup throw instead of #{throw m28beaodm9yu0orlbadpwg2cr-723}
+    (vector-for-each
+     (lambda (name)
+       (hashtable-add! rename (symbol->string name) name))
+     (hashtable-keys id-nodes))
+    (lambda (id)
+      (let ([cooked (hashtable-ref rename (symbol->string id) '())])
+        (raw-info id)
+        (for-each raw-info (remq id cooked))))))
+
+;; doesn't do well yet with:
+;;  (info 'throw)    ;; doesn't link up the bind-src

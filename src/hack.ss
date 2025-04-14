@@ -452,9 +452,8 @@
       (match-define `(graph [nodes ,id-nodes] [in-edges ,id-in-edges] [out-edges ,id-out-edges]) ids)
       (define (raw-info id)
         (define nodes (hashtable-ref id-nodes id '()))
-        ;; TODO some assumption wrong here
-        (define root (find (lambda (N) (not (hashtable-ref id-out-edges N #f))) nodes))
-        (dump id root nodes))
+        (foreach ([root (filter (lambda (N) (not (hashtable-ref id-out-edges N #f))) nodes)])
+          (dump id root nodes)))
       (define (dump id root nodes)
         (match root
           [`(node ,name ,type ,src)

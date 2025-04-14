@@ -357,6 +357,17 @@
        '()))
    piv))
 
+(define (help1)
+(printf ";;  Example:
+;;   > (sm*)  ;; or (sm)\n")
+(help2))
+(define (help2)
+(printf "\
+;;   > (define-values (st locals globals) (get-source \"../build/release/lib/swish/cli.sx\"))
+;;     ;; or using the graph view of things:
+;;   > (info 'throw)   ;; after first doing the (sm) or (sm*) as above\n"))
+(help1)
+
 (define (slurp filename)
   (define ip (open-binary-file-to-read filename))
   (on-exit (close-port ip)
@@ -373,14 +384,15 @@
         [#!eof (void)]
         [,other (printf "IGNORING ~s\n" other) (fasl-read ip) (go)]))))
 
-(define (sm) (slurp "/tmp/source-map.fasl") (link-syntax!))
+(define (sm) (slurp "/tmp/source-map.fasl") (link-syntax!) (help2))
 (define (sm*)
   (fold-files "/tmp" #f (lambda (dir) #f)
     (lambda (filename _)
       (when (pregexp-match-positions (re ".*/sm-.*\\.fasl") filename)
         (printf "slurp: ~a\n" filename)
         (slurp filename))))
-  (link-syntax!))
+  (link-syntax!)
+  (help2))
 
 ;; returns result of $extract-source, which
 ;; currently returns multiple values:
@@ -395,11 +407,6 @@
       (let ([lsrc (fasl-read ip)])
         (assert (eof-object? (fasl-read ip)))
         (#%$extract-source lsrc)))))
-
-
-(printf ";;  Example:
-;;   > (sm*)  ;; or (sm)
-;;   > (define-values (st locals globals) (get-source \"../build/release/lib/swish/cli.sx\"))\n")
 
 (define (show id)
   (cond
@@ -445,7 +452,7 @@
 ;; alternative trying to use hack library
 (define info
   (let ([rename (make-hashtable string-hash string=?)])
-    (define (init!)
+    (define (init!) ;; BARF
       (import (hack))
       (match-define `(tome ,realms ,ids) T)
       (match-define `(graph [nodes ,r-nodes] [in-edges ,r-in-edges] [out-edges ,r-out-edges]) realms)
@@ -454,28 +461,35 @@
         (define nodes (hashtable-ref id-nodes id '()))
         (foreach ([root (filter (lambda (N) (not (hashtable-ref id-out-edges N #f))) nodes)])
           (dump id root nodes)))
+      (define (count-distinct ls)
+        (let ([ht (make-eq-hashtable)])
+          (foreach ([x ls])
+            (hashtable-update! ht x add1 0))
+          (vector->list
+           (vector-sort (lambda (a b) (> (cdr a) (cdr b)))
+             (hashtable-cells ht)))))
+      (define (unique-occurrences edge*)
+        (define dups (make-source-table))
+        (define no-src '())
+        (foreach ([e edge*])
+          (match e
+            [`(edge ,type [from `(node ,src)])
+             (if (not src)
+                 (set! no-src (cons type no-src))
+                 (let ([cell (source-table-cell dups src '())])
+                   (set-cdr! cell (cons type (cdr cell)))))]))
+        ;; TODO barf this is so not readable and also horrible
+        (fold-right (lambda (x ls) (cons (list x #f) ls))
+          (map (lambda (cell)
+                 (append (count-distinct (cdr cell)) (list (car cell))))
+            (source-table-dump dups))
+          (count-distinct no-src)))
       (define (dump id root nodes)
         (match root
           [`(node ,name ,type ,src)
            (printf "~s ~s bound at ~s\n" name type src)
            (printf " references:\n~:{   ~s ~s\n~}"
-             (map
-              (lambda (e)
-                (match e
-                  [`(edge ,type [from `(node ,src)]) (list type src)]
-                  [,_ (printf "NOT AN EDGE: ~s\n" e)]))
-              (hashtable-ref id-in-edges root '())))]
-          [,_
-           (when nodes
-             (printf "while looking for ~s: didn't find a root node (among ~s nodes)\n" id (length nodes))
-             (for-each
-              (lambda (N)
-                (for-each
-                 (lambda (E)
-                   (match E
-                     [`(edge ,from ,to) (dump id from #f)]))
-                 (hashtable-ref id-in-edges N '())))
-              nodes))])
+             (unique-occurrences (hashtable-ref id-in-edges root '())))])
         (newline))
       ;; translate raw names so we can lookup throw instead of #{throw m28beaodm9yu0orlbadpwg2cr-723}
       (vector-for-each
@@ -489,10 +503,3 @@
       (let ([cooked (hashtable-ref rename (symbol->string id) '())])
         (raw-info id)
         (for-each raw-info (remq id cooked))))))
-
-
-
-#!eof
-
-;; doesn't do well yet with:
-;;  (info 'throw)    ;; doesn't link up the bind-src

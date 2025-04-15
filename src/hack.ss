@@ -6,6 +6,7 @@
    add-globals!
    add-imports!
    add-lexicals!
+   add-primitives!
    add-realms!
    add-syntax!
    edge
@@ -85,6 +86,18 @@
              (add-edge! 'ref (get-node name #f ref-src) binding))
            (foreach ([set-src set-src*])
              (add-edge! 'set (get-node name #f set-src) binding)))))))
+
+  (define (add-primitives! T prim-info-v)
+    (with-graph (tome-ids T) 'primitive
+      (lambda (add-node! add-edge! get-node)
+        (foreach ([pi prim-info-v])
+          (match-let*
+           ([`(prim-info ,name ,ref2-src* ,ref3-src*) pi]
+            [,binding (get-node name name #f)])
+           (foreach ([ref2-src ref2-src*])
+             (add-edge! 'ref2 (get-node name #f ref2-src) binding))
+           (foreach ([ref3-src ref3-src*])
+             (add-edge! 'ref3 (get-node name #f ref3-src) binding)))))))
 
   (define (add-globals! T global-info-v)
     (with-graph (tome-ids T) 'global
@@ -235,6 +248,7 @@
 (define syntax-db (make-hashtable symbol-hash eq?))
 (define syntax-raw-before-rewiring (make-hashtable symbol-hash eq?))
 (define prim-db (make-hashtable symbol-hash equal?))
+(define prim-raw-before-rewiring (make-hashtable symbol-hash eq?))
 (define *alias* '())
 (define *contour* '())
 (define whence-db (make-eq-hashtable))
@@ -347,10 +361,21 @@
        '()))
    sinfos))
 
+(define (link-prim!)
+  (define (gather field p*)
+    (fold-left (lambda (ls pi) (fold-left (lambda (src* s) (cons s src*)) ls (field pi)))
+      '()
+      p*))
+  (foreach ([cell (hashtable-cells prim-raw-before-rewiring)])
+    (match-define (,key . ,pi*) cell)
+    (hashtable-set! prim-db key
+      (make-prim-info key (gather prim-info-ref2-src* pi*) (gather prim-info-ref3-src* pi*))))
+  (add-primitives! T (hashtable-values prim-db)))
+
 (define (smash-prim! filename piv)
   (vector-for-each
    (lambda (pi)
-     (hashtable-update! prim-db (prim-info-name pi)
+     (hashtable-update! prim-raw-before-rewiring (prim-info-name pi)
        (lambda (prev)
          (whence! pi filename)
          (cons pi prev))
@@ -384,15 +409,19 @@
         [#!eof (void)]
         [,other (printf "IGNORING ~s\n" other) (fasl-read ip) (go)]))))
 
-(define (sm) (slurp "/tmp/source-map.fasl") (link-syntax!) (help2))
+(define (postlude)
+  (link-prim!)
+  (link-syntax!)
+  (help2))
+
+(define (sm) (slurp "/tmp/source-map.fasl") (postlude))
 (define (sm*)
   (fold-files "/tmp" #f (lambda (dir) #f)
     (lambda (filename _)
       (when (pregexp-match-positions (re ".*/sm-.*\\.fasl") filename)
         (printf "slurp: ~a\n" filename)
         (slurp filename))))
-  (link-syntax!)
-  (help2))
+  (postlude))
 
 ;; returns result of $extract-source, which
 ;; currently returns multiple values:

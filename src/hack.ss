@@ -532,3 +532,74 @@
       (let ([cooked (hashtable-ref rename (symbol->string id) '())])
         (raw-info id)
         (for-each raw-info (remq id cooked))))))
+
+#!eof
+
+;; scan accumulated data to get a sense of its size
+;; so we can think about suitable data structures for querying
+(define (go)
+  (define sts (make-hashtable string-hash string=?))
+  (module (syntax-object? syntax-object-expression)
+    ;; v---- ripped off from meta.ss
+    (define so-rtd (record-rtd #'_))
+    (define syntax-object? (record-predicate so-rtd))
+    (define flds (record-type-field-names so-rtd))
+    (define (make-accessor fld-name)
+      (let ([i (ormap (lambda (f i) (and (eq? f fld-name) i))
+                 (vector->list flds)
+                 (iota (vector-length flds)))])
+        (record-accessor so-rtd i)))
+    (define syntax-object-expression (make-accessor 'expression)))
+  (define (incr! ?src)
+    (cond
+     [(source-object? ?src)
+      (let ([fn.st (hashtable-cell sts (source-file-descriptor-path (source-object-sfd ?src)) #f)])
+        (unless (cdr fn.st) (set-cdr! fn.st (make-source-table)))
+        (let ([cell (source-table-cell (cdr fn.st) ?src 0)])
+          (set-cdr! cell (+ (cdr cell) 1))))]
+     [(pair? ?src) (for-each incr! ?src)]
+     [(identifier? ?src) (incr! (syntax-object-expression ?src))]
+     [(annotation? ?src) (incr! (annotation-source ?src))]
+     [(null? ?src)]
+     [(not ?src)]
+     [(eq? ?src 'built-in)]
+     [else (throw `#(forgot ,?src))]))
+  (define (scan . fields)
+    (define (do-fields info)
+      (for-each (lambda (field) (incr! (field info))) fields))
+    (define (do-info info)
+      (cond
+       [(vector? info) (vector-for-each do-info info)]
+       [(pair? info) (do-info (car info)) (do-info (cdr info))]
+       [(record? info) (do-fields info)]
+       [(null? info)]
+       [else (printf "Huh, forgot about ~s\n" info)]))
+    do-info)
+  (vector-for-each
+   (scan
+    lexical-info-bind-src
+    lexical-info-ref-src*
+    lexical-info-set-src*)
+   (hashtable-values lexical-db))
+  (vector-for-each
+   (scan
+    global-info-ref-src*
+    global-info-set-src*)
+   (hashtable-values global-db))
+  (vector-for-each
+   (scan
+    prim-info-ref2-src*
+    prim-info-ref3-src*)
+   (hashtable-values prim-db))
+  (vector-for-each
+   (scan
+    syntax-info-bind-src
+    syntax-info-ref-src*)
+   (hashtable-values syntax-db))
+  (for-each (scan contour-src) *contour*)
+  (for-each (scan values) *alias*)
+  sts)
+
+
+
+

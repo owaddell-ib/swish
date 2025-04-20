@@ -44,6 +44,19 @@
             cell)))
     ;; TODO temp disable so we can see how long it takes
     (#%$report-source-info
+     (lambda (sm)
+       (let ([filename "/tmp/sm2.fasl"])
+         (let ([op (open-file-output-port filename (file-options no-fail no-truncate))])
+           (file-position op (file-length op))
+           (fasl-write
+            `#(<sm>
+               ,(source-table-dump (source-map-st sm))
+               ,(source-map-prim->node sm)
+               ,(source-map-key->node sm)
+               ,(source-map-default-cell sm))
+            op)
+           (close-port op))))
+     #;     
      (let ([filename "/tmp/source-map.fasl"])
        (define HACK 0)
        (define (dump op what data)

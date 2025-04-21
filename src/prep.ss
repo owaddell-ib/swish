@@ -52,6 +52,7 @@
                   [unsafe ,(prim-info-unsafe* (cdr cell))]))
               (hashtable-cells
                (source-map-prim->node sm)))
+            ;; TODO ooops, this has a mix of identifier-info and eq-hashtables
             ,(hashtable-values (source-map-key->node sm)) ;; TODO retain keys for source-map merge stuff
             ,(source-map-default-cell sm)) ;; TODO remember to deal with this rubbish
          op)

@@ -29,85 +29,33 @@
                ;; TODO maybe we no longer need the following to get top-level ref info?
                ;;   [compile-profile #t] ;; given current hackery for top-level references
                [run-cp0 (lambda (f x) x)])
-  (let ([no-src '()])
-    (define st (make-source-table))
-    (define (log! src x)
-      (if src
-          (let ([cell (source-table-cell st src '())])
-            (set-cdr! cell (cons x (cdr cell))))
-          (set! no-src (cons x no-src))))
-    (define (find! src category)
-      (if (not src)
-          category
-          (let ([cell (source-table-cell st src category)])
-            (assert (eq? category (cdr cell)))
-            cell)))
+  (let ([sm (#%$make-source-map)])
     ;; TODO temp disable so we can see how long it takes
     (#%$report-source-info
-     (lambda (sm)
-       (let ([filename "/tmp/sm2.fasl"])
-         (let ([op (open-file-output-port filename (file-options no-fail no-truncate))])
-           (file-position op (file-length op))
-           (fasl-write
-            `#(<sm>
-               ,(source-table-dump (source-map-st sm))
-               ,(source-map-prim->node sm)
-               ,(source-map-key->node sm)
-               ,(source-map-default-cell sm))
-            op)
-           (close-port op))))
-     #;     
-     (let ([filename "/tmp/source-map.fasl"])
-       (define HACK 0)
-       (define (dump op what data)
-         ;; TODO guessing this might be a convenient format for Chris: read to get category, read to get data
-         (fasl-write what op)
-         (fasl-write data op))
-       (delete-file filename)
-       (lambda (outfn
-                lexical* global* prim* contour* realm* imports-ht syntax* alias*)
-         (let ([op (open-file-output-port filename (file-options no-fail no-truncate))])
-           (file-position op (file-length op))
-           ;; TODO currently dumping source map each time Scheme calls the report-source-info hook
-           ;;      but we could instead build up a list of the results and fasl-write it all at once
-           ;;      to make it more compact.
-           (dump op 'lexical lexical*)
-           (dump op 'global global*)
-           (dump op 'prim prim*)
-           (dump op 'syntax syntax*)
-           (dump op 'contour contour*)
-           (dump op 'realm realm*)
-           (dump op 'imports-ht imports-ht)
-           (dump op 'alias alias*)
-           (close-port op)
-   
-           ;; This is for me to investigate where we're getting extra lexical-info's
-           (let ([op (open-file-output-port (format "/tmp/sm-~s.fasl" HACK))])
-             (printf "writing output to ~s for ~s\n" (port-name op) outfn)   
-             (set! HACK (+ HACK 1))
-             (dump op 'lexical lexical*)
-             (dump op 'global global*)
-             (dump op 'prim prim*)
-             (dump op 'syntax syntax*)
-             (dump op 'contour contour*)
-             (dump op 'realm realm*)
-             (dump op 'imports-ht imports-ht)
-             (dump op 'alias alias*)
-             (close-port op))
-   
-           ))))
+     (case-lambda
+      [() sm]
+      [(sm) ;; TODO stupid holdover from old interface
+       (printf "whee! sc-expand called report-source\n")]))
     (eval '(import (swish imports)))
     ;; Stick with Chez Scheme primitives here (we haven't built Swish yet)
-    (let* ([filename "report-source-info-output.source-table"]
-           [!! (delete-file filename)]
-           [op (open-output-file filename)])
-      (printf "~s entries w/o src\n" (length no-src))
-      (dynamic-wind void
-        (lambda ()
-          (put-source-table op st)
-          (fprintf op "\n#!eof\n")
-          (pretty-print no-src op))
-        (lambda () (close-port op))))))
+    (let ([filename "/tmp/bolus.fasl"])
+      (let ([op (open-file-output-port filename (file-options no-fail #; no-truncate))])
+        #; ;; not appending any more
+        (file-position op (file-length op))
+        (fasl-write
+         `#(<sm>
+            ,(source-table-dump (source-map-st sm))
+            ,(vector-map
+              (lambda (cell)
+                `(,(car cell)
+                  [safe ,(prim-info-safe* (cdr cell))]
+                  [unsafe ,(prim-info-unsafe* (cdr cell))]))
+              (hashtable-cells
+               (source-map-prim->node sm)))
+            ,(hashtable-values (source-map-key->node sm)) ;; TODO retain keys for source-map merge stuff
+            ,(source-map-default-cell sm)) ;; TODO remember to deal with this rubbish
+         op)
+        (close-port op)))))
 
 (#%$print-pass-stats)
 

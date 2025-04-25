@@ -30,6 +30,14 @@
                ;;   [compile-profile #t] ;; given current hackery for top-level references
                [run-cp0 (lambda (f x) x)])
   (let ([sm (#%$make-source-map)])
+    (define (add-source! sx-file) ;; TODO should bake this into expand-to-file
+      (let ([ip (open-file-input-port sx-file)])
+        (fasl-read ip) ;; recompile info
+        (fasl-read ip) ;; #t
+        (let ([lsrc (fasl-read ip)])
+          (assert (eof-object? (fasl-read ip)))
+          (#%$extract-source lsrc sm))
+        (close-port ip)))
     ;; TODO temp disable so we can see how long it takes
     (#%$report-source-info
      (case-lambda
@@ -37,6 +45,15 @@
       [(sm) ;; TODO stupid holdover from old interface
        (printf "whee! sc-expand called report-source\n")]))
     (eval '(import (swish imports)))
+    ;; TODO THIS IS SO TERRIBLE IN STOCK SCHEME
+    (for-each
+      (lambda (filename)
+        (when (equal? (path-extension filename) "sx")
+          (printf "scanning ~s\n" filename)
+          ;; TODO BARF BARF
+          (add-source! (string-append "../build/release/lib/swish/" filename))))
+      (directory-list "../build/release/lib/swish"))
+    (printf "*** REMEMBER the .sx scan hack will miss files!\n")    
     ;; Stick with Chez Scheme primitives here (we haven't built Swish yet)
     (let ([filename "/tmp/bolus.fasl"])
       (let ([op (open-file-output-port filename (file-options no-fail #; no-truncate))])

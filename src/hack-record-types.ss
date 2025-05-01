@@ -45,14 +45,28 @@
      (lambda (name)
        (new name '() '())))))
 
+;; TODO instead of making the fields mutable, should we have an intermediate record type for cases like
+;;      add-import! that have only partial information and then merge that info when we get it?
 (define-record-type contour-info
-  (nongenerative #{contour-info nfne4i66hgd1aupfouk6yvuxc-2})
+  (nongenerative #{contour-info j1qn4yon710auwsxmmkymfryk-0})
   (fields
    ;; TODO are name / kind going to be common fields of a parent source-info record type?
-   (immutable name)     ;; #f | symbol | library path  ;; TODO what about library version ???
-   (immutable kind)     ;; lambda | letrec | letrec* | module | library
-   (immutable import*)  ;; (src ...)  ;; TODO more generally: (node ...) ??
-   (immutable export*)  ;; (identifier-info ...)
-   (immutable bound*)   ;; (identifier-info ...)
+   ;;      - not sure this has a name
+   (mutable kind)     ;; lambda | letrec | letrec* | module | library
+   (mutable src)      ;; bfp/efp for region: e.g., individual case-lambda clause
+   ;; TODO should we move the parameterize inside the build-letrec* in build-library-body so it can record contour for us?
+   ;;      i.e., maybe contour should be just src and bound* and src so we avoid the mess of name, export*, and ref*
+   (mutable bound*)   ;; (identifier-info ...)
    ))
 
+(define-record-type interface-info
+  (nongenerative #{interface-info j1qn4yon710auwsxmmkymfryk-1})
+  (fields
+   ;; TODO are name / kind going to be common fields of a parent source-info record type?
+   (mutable name)     ;; #f | symbol | library path  ;; TODO what about library version ???
+   (mutable kind)     ;; lambda | letrec | letrec* | module | library
+   (mutable src)      ;; bfp/efp for region: e.g., individual case-lambda clause
+   (mutable ref*)     ;; edges showing where we were imported (src ...)  ;; TODO more generally: (node ...) ??
+   (mutable impreq*)  ;; (uid ...)
+   (mutable export*)  ;; #(label ...)
+   ))

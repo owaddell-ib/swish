@@ -25,6 +25,39 @@
 
 (include "hack-record-types.ss")
 
+;; TODO this is stuff we need to move into Chez Scheme; but it's easier to iterate here
+(define (link-source-map! sm)
+  ;; TODO some sort of link phase; likely on-demand, when we merge source-maps, etc.
+  ;;    - wire interface-info-impreq* to the corresponding interface-info node
+  ;;    - wire interface-info-export* to the corresponding identifier-info
+  (let ([key->node (source-map-key->node sm)])
+
+    (define (resolve resolved?)
+      (lambda (key)
+        (if (resolved? key)
+            key ;; resolved on hypothetical earlier link of source-map
+            (hashtable-ref key->node key key))))
+
+    (vector-for-each
+     (lambda (cell)
+       (let ([key (car cell)] [node (cdr cell)])
+           ;; TODO ? may want to put interfaces (and other stuff that needs linking) into a separate key->node map
+           ;;      so we can find it faster (i.e., if we don't need to link other node types)
+         (cond
+          [(interface-info? node)
+           ;; Link imports to the interface-info they imported if we can resolve it.
+           ;; TODO the Chez Scheme version may need some way to dump results for us that filters out the key; maybe replace with #f so we know there's something unresolved?
+           (interface-info-impreq*-set! node
+             (map (resolve interface-info?)
+               (interface-info-impreq* node)))
+           ;; Link exports to their identifier-info nodes
+           (interface-info-export*-set! node
+             (map (resolve identifier-info?)
+               (interface-info-export* node)))])))
+     (hashtable-cells key->node))
+
+    ))
+
 (parameterize ([current-eval interpret] ;; trying to figure out why pass-stats shows compiler active
                ;; TODO maybe we no longer need the following to get top-level ref info?
                ;;   [compile-profile #t] ;; given current hackery for top-level references
@@ -39,11 +72,11 @@
        (printf "whee! sc-expand called report-source\n")]))
     (parameterize ([#%$current-source-map sm])
       (eval '(import (swish imports))))
+    ;; Do the linking that Chez Scheme needs to do for us eventually:
+    (link-source-map! sm)
     ;; Stick with Chez Scheme primitives here (we haven't built Swish yet)
     (let ([filename "/tmp/bolus.fasl"])
-      (let ([op (open-file-output-port filename (file-options no-fail #; no-truncate))])
-        #; ;; not appending any more
-        (file-position op (file-length op))
+      (let ([op (open-file-output-port filename (file-options no-fail))])
         (fasl-write
          `#(<sm>
             ,(source-table-dump (source-map-st sm))

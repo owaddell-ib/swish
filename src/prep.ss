@@ -72,11 +72,15 @@
        (printf "whee! sc-expand called report-source\n")]))
     (parameterize ([#%$current-source-map sm])
       (eval
-       (match (command-line-arguments)
-         [() '(import (swish imports))]
-         [(,s)
-          (library-directories (cons "." (library-directories)))
-          (read (open-input-string s))])))
+       ;; oops, forgot to stick to vanilla Chez Scheme
+       (let ([args (command-line-arguments)])
+         (if (null? args)
+             '(import (swish imports))
+             (let ([s (car args)])
+               (unless (null? (cdr args))
+                 (printf "IGNORING:~{ ~a~}\n" (cdr args)))
+               (library-directories (cons "." (library-directories)))
+               (read (open-input-string s)))))))
     ;; Do the linking that Chez Scheme needs to do for us eventually:
     (link-source-map! sm)
     ;; Stick with Chez Scheme primitives here (we haven't built Swish yet)

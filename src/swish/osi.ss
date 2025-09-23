@@ -149,6 +149,16 @@
        (define name
          (foreign-procedure (symbol->string 'name) (arg-type ...) ret-type))]))
 
+  ;; __atomic must not call back into Scheme or allocate on the Scheme heap
+  (define-syntax fdefine*
+    (meta-cond
+     [(guard (c [else #f]) (expand '(foreign-procedure __atomic "power" () int)))
+      (syntax-rules ()
+        [(_ name (arg-name arg-type) ... ret-type)
+         (define name
+           (foreign-procedure __atomic (symbol->string 'name) (arg-type ...) ret-type))])]
+     [else (identifier-syntax fdefine)]))
+
   ($import-internal throw)
 
   (define-syntax (define-osi x)
@@ -170,25 +180,25 @@
 
   ;; System
   (fdefine osi_get_argv ptr)
-  (fdefine osi_get_bytes_used size_t)
+  (fdefine* osi_get_bytes_used size_t)
   (fdefine osi_get_callbacks (timeout unsigned-64) ptr)
   (fdefine osi_get_error_text (err int) string)
   (define-osi osi_get_hostname)
-  (fdefine osi_get_hrtime unsigned-64)
-  (fdefine osi_get_pid int)
-  (fdefine osi_get_time unsigned-64)
+  (fdefine* osi_get_hrtime unsigned-64)
+  (fdefine* osi_get_pid int)
+  (fdefine* osi_get_time unsigned-64)
   (fdefine osi_get_uname ptr)
-  (fdefine osi_is_quantum_over boolean)
+  (fdefine* osi_is_quantum_over boolean)
   (fdefine osi_list_uv_handles ptr)
   (define-osi osi_make_uuid)
-  (fdefine osi_set_quantum (nanoseconds unsigned-64) void)
+  (fdefine* osi_set_quantum (nanoseconds unsigned-64) void)
   (define-osi osi_start_signal (signum int))
   (define-osi osi_stop_signal (handler uptr))
   (define osi_get_free_memory
     (foreign-procedure "uv_get_free_memory" () unsigned-64))
   (define osi_get_total_memory
     (foreign-procedure "uv_get_total_memory" () unsigned-64))
-  (fdefine osi_is_service boolean)
+  (fdefine* osi_is_service boolean)
   (define osi_get_available_parallelism
     (foreign-procedure "uv_available_parallelism" () unsigned-32))
 
@@ -221,12 +231,12 @@
   (define-osi osi_get_stat (path string) (follow? boolean) (callback ptr))
   (define-osi osi_unlink (path string) (callback ptr))
   (define-osi osi_watch_path (path string) (callback ptr))
-  (fdefine osi_close_path_watcher (watcher uptr) void)
+  (fdefine* osi_close_path_watcher (watcher uptr) void)
 
   ;; TCP/IP
   (define-osi osi_connect_tcp (node string) (service string) (callback ptr))
   (define-osi osi_listen_tcp (address string) (port unsigned-16) (callback ptr))
-  (fdefine osi_close_tcp_listener (listener uptr) void)
+  (fdefine* osi_close_tcp_listener (listener uptr) void)
   (define-osi osi_get_tcp_listener_port (listener uptr))
   (define-osi osi_get_ip_address (port uptr))
   (define-osi osi_tcp_nodelay (port uptr) (enabled? boolean))

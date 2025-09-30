@@ -204,47 +204,65 @@
            ((digest-provider-get digest) ctx)
            (closed-digest-error 'get-hash "read from" digest)))))
 
-  (define (hash->hex-string bv)
+  (include "unsafe.ss")
+  (define-syntax define-optimized
+    (syntax-rules ()
+      [(_ define-unsafe prim ...)
+       (define-syntax (define-unsafe x)
+         (syntax-case x ()
+           [(k what . rhs)
+            (with-implicit (k prim ...)
+              #'(define what (let () (declare-unsafe-primitives prim ...) . rhs)))]))]))
+
+  (define-optimized define-unsafe
+    bytevector-length bytevector-u8-ref bytevector-u8-set!
+    fx- fx* fx+ fx= fx>= fxlogand fxlogor fxmin fxsll fxsrl
+    string-ref string-set!)
+
+  (define-unsafe (hash->hex-string bv)
     (define digits "0123456789abcdef")
     (arg-check 'hash->hex-string [bv bytevector?])
-    (let* ([len (#3%bytevector-length bv)]
+    (let* ([len (bytevector-length bv)]
            [s (make-string (fx* 2 len))])
-      (do ([i 0 (#3%fx+ i 1)]) ((#3%fx= i len))
-        (let ([j (#3%fx* i 2)]
-              [b (#3%bytevector-u8-ref bv i)])
-          (let-values ([(hi lo) (values (#3%fxsrl b 4) (#3%fxlogand b #xF))])
-            (#3%string-set! s j (#3%string-ref digits hi))
-            (#3%string-set! s (#3%fx+ j 1) (#3%string-ref digits lo)))))
+      (do ([i 0 (fx+ i 1)]) ((fx= i len))
+        (let ([j (fx* i 2)]
+              [b (bytevector-u8-ref bv i)])
+          (let-values ([(hi lo) (values (fxsrl b 4) (fxlogand b #xF))])
+            (string-set! s j (string-ref digits hi))
+            (string-set! s (fx+ j 1) (string-ref digits lo)))))
       s))
 
   (define-syntax char-value
     (syntax-rules (else)
       [(_ ignore [else e0 e1 ...]) (begin e0 e1 ...)]
       [(_ expr [(lo n hi) val] more ...)
-       (let* ([c expr] [x (#3%char->integer c)])
-         (if (#3%fx<= (char->integer lo) x (char->integer hi))
-             (let ([n (#3%fx- x (char->integer lo))]) val)
-             (char-value c more ...)))]))
+       (andmap char? (datum (lo hi)))
+       (let ()
+         (declare-unsafe-primitives fx- fx<= char->integer)
+         (let* ([c expr] [x (char->integer c)])
+           (if (fx<= (char->integer lo) x (char->integer hi))
+               (let ([n (fx- x (char->integer lo))]) val)
+               (char-value c more ...))))]))
 
-  (define (hex-string->hash s)
+  (define-unsafe (hex-string->hash s)
     (define (bad-input) (bad-arg 'hex-string->hash s))
     (arg-check 'hex-string->hash [s string?])
     (let ([len (string-length s)])
       (unless (even? len) (bad-input))
       (let ([bv (make-bytevector (fx/ len 2))])
         (define (hex-val s i)
-          (char-value (#3%string-ref s i)
+          (char-value (string-ref s i)
             [(#\0 n #\9) n]
             [(#\a n #\f) (fx+ 10 n)]
             [(#\A n #\F) (fx+ 10 n)]
             [else (bad-input)]))
-        (do ([i 0 (#3%fx+ i 2)]) ((#3%fx= i len))
-          (#3%bytevector-u8-set! bv (#3%fxsrl i 1)
-            (#3%fxlogor (#3%fxsll (hex-val s i) 4) (hex-val s (#3%fx+ i 1)))))
+        (do ([i 0 (fx+ i 2)]) ((fx= i len))
+          (bytevector-u8-set! bv (fxsrl i 1)
+            (fxlogor (fxsll (hex-val s i) 4) (hex-val s (fx+ i 1)))))
         bv)))
 
   (define default-block-size (expt 2 14)) ;; under .5ms on 2012 laptop
-  (define bytevector->hex-string
+  (define-unsafe bytevector->hex-string
     (case-lambda
      [(bv algorithm) (bytevector->hex-string bv algorithm default-block-size)]
      [(bv algorithm block-size)
@@ -255,8 +273,8 @@
                   (current-digest-provider))])
         (on-exit (close-digest md)
           (let ([len (bytevector-length bv)])
-            (do ([i 0 (#3%fx+ i block-size)]) ((#3%fx>= i len))
-              (hash! md bv i (#3%fxmin block-size (#3%fx- len i)))))
+            (do ([i 0 (fx+ i block-size)]) ((fx>= i len))
+              (hash! md bv i (fxmin block-size (fx- len i)))))
           (hash->hex-string (get-hash md))))]))
 
   (record-writer (record-type-descriptor digest-provider)

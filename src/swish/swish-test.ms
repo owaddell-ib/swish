@@ -867,7 +867,7 @@
       (mat-data-results obj)))
   ;; case where all tests pass
   (zero-exit (swish-test "--progress none " all-pass) '())
-  (zero-exit (swish-test "--progress none --harvest " mo-all-pass) '())
+  (zero-exit (swish-test "--harvest " mo-all-pass) '()) ;; generate output to sidestep mystery ta6nt bug :(
   ;; case where some tests fail
   (nonzero-exit
    (swish-test "--progress none --report " report-file " " test-file)

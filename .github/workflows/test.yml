@@ -65,10 +65,10 @@ jobs:
             os: macos-13
             chez: v9.6.4
           - machine: a6osx
-            os: macos-13
+            os: macos-15-intel
             chez: main
           - machine: arm64osx
-            os: macos-14
+            os: macos-15
             chez: main
           - machine: i3le
             os: ubuntu-24.04
@@ -83,19 +83,19 @@ jobs:
             os: ubuntu-24.04
             chez: main
           - machine: i3nt
-            os: windows-2022
+            os: windows-2025
             chez: v9.6.4
           - machine: a6nt
-            os: windows-2022
+            os: windows-2025
             chez: v9.6.4
           - machine: ta6nt
-            os: windows-2022
+            os: windows-2025
             chez: v9.6.4
           - machine: a6nt
-            os: windows-2022
+            os: windows-2025
             chez: main
           - machine: ta6nt
-            os: windows-2022
+            os: windows-2025
             chez: main
     runs-on: ${{ matrix.config.os }}
     defaults:

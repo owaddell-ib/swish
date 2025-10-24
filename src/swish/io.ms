@@ -251,15 +251,23 @@
      '()
      buffer-sizes))
   (define (watch-callbacks who renames updates)
+    (printf "---- watch-callbacks ~s\n" who) 
     (let lp ([renames-tbd renames]
              [renames-seen '()]
              [updates-tbd updates]
              [updates-seen '()])
+       
+      (printf " renames-tbd=~s renames-seen=~s updates-tbd=~s updates-seen=~s\n"
+        renames-tbd
+        renames-seen
+        updates-tbd
+        updates-seen)
       (receive
        (after 500
          (unless (and (null? renames-tbd) (null? updates-tbd))
            (throw `#(path-changed-missing ,who ,renames-tbd ,updates-tbd))))
        [#(path-changed ,@test-dir ,filename 1)
+        (printf " [path-changed 1 ~s]\n" filename)   
         (cond
          [(member filename renames-tbd)
           (lp (remove filename renames-tbd) (cons filename renames-seen)
@@ -269,6 +277,7 @@
          [else
           (throw `#(unexpected-path-rename ,who ,filename ,renames))])]
        [#(path-changed ,@test-dir ,filename 2)
+        (printf " [path-changed 2 ~s]\n" filename)   
         (cond
          [(member filename updates-tbd)
           (lp renames-tbd renames-seen
@@ -276,7 +285,12 @@
          [(member filename updates-seen)
           (lp renames-tbd renames-seen updates-tbd updates-seen)]
          [else
-          (throw `#(unexpected-path-updated ,who ,filename ,updates))])])))
+          (throw `#(unexpected-path-updated ,who ,filename ,updates))])]))
+    (let cleanup ()
+      (receive (until 0 'done)
+        [,x (printf " cleanup: eating ~s\n" x) (cleanup)]))
+    (printf "\n") 
+    )
   (define bullet "\x2022;")
   (define test-dir (string-append bullet "files-test" bullet "/"))
   (match-let*

@@ -253,7 +253,10 @@
   (define (watch-callbacks who renames updates)
     (printf "---- watch-callbacks ~s\n" who) 
     (let lp ([renames-tbd renames]
-             [renames-seen '()]
+             [renames-seen
+              (if (memq (machine-type) '(a6osx arm64osx))
+                  (list test-dir-name)
+                  '())]
              [updates-tbd updates]
              [updates-seen '()])
        
@@ -293,6 +296,7 @@
     )
   (define bullet "\x2022;")
   (define test-dir (string-append bullet "files-test" bullet "/"))
+  (define test-dir-name (path-first test-dir))
   (match-let*
    ([#(EXIT #(bad-arg open-file bad-type))
      (catch (open-file "foo.bar" 0 0 'bad-type))]

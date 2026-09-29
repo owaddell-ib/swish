@@ -124,7 +124,7 @@ int main(void)
         return 1;
     }
 
-    rc = uv_timer_start(&timer, on_timer, 500, 0);
+    rc = uv_timer_start(&timer, on_timer, 1000, 0);
     if (rc != 0) {
         fprintf(stderr, "uv_timer_start: %s\n", uv_strerror(rc));
         return 1;

@@ -8,7 +8,6 @@ static uv_process_t child;
 static uv_signal_t sigchld_watcher;
 static uv_timer_t timer;
 
-static int kill_requested = 0;
 static int unexpected_sigchld = 0;
 
 static void on_child_exit(uv_process_t *process,
@@ -30,27 +29,16 @@ static void on_sigchld(uv_signal_t *handle, int signum)
 
     (void) signum;
 
-    fprintf(stderr, "SIGCHLD callback invoked\n");
-
-    if (kill_requested)
-        return;
-
     fprintf(stderr,
             "UNEXPECTED: SIGCHLD arrived while requested child "
             "should still be sleeping\n");
 
     unexpected_sigchld = 1;
-    kill_requested = 1;
 
-    /*
-     * We have reproduced the behavior, so cancel the watchdog.
-     */
+    /* Test is over. Cancel the watchdog and stop observing SIGCHLD. */
     uv_timer_stop(&timer);
     uv_close((uv_handle_t *) &timer, NULL);
 
-    /*
-     * Don't observe the legitimate SIGCHLD caused by terminating sleep.
-     */
     uv_signal_stop(handle);
     uv_close((uv_handle_t *) handle, NULL);
 
@@ -65,11 +53,9 @@ static void on_timer(uv_timer_t *handle)
 
     fprintf(stderr, "timeout: no unexpected SIGCHLD observed\n");
 
-    kill_requested = 1;
-
     /*
-     * The watchdog won, so stop observing SIGCHLD before deliberately
-     * terminating the requested child.
+     * Stop observing SIGCHLD first, so the deliberate termination below
+     * cannot be mistaken for the condition we're testing.
      */
     uv_signal_stop(&sigchld_watcher);
     uv_close((uv_handle_t *) &sigchld_watcher, NULL);

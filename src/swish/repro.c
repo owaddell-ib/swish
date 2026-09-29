@@ -23,10 +23,17 @@ static void on_child_exit(uv_process_t *process,
     uv_close((uv_handle_t *) process, NULL);
 }
 
-static void on_sigchld(uv_signal_t *handle, int signum)
+static void cleanup(void)
 {
     int rc;
 
+    rc = uv_process_kill(&child, SIGTERM);
+    if (rc != 0)
+        fprintf(stderr, "uv_process_kill: %s\n", uv_strerror(rc));
+}
+
+static void on_sigchld(uv_signal_t *handle, int signum)
+{
     (void) signum;
 
     fprintf(stderr,
@@ -42,15 +49,11 @@ static void on_sigchld(uv_signal_t *handle, int signum)
     uv_signal_stop(handle);
     uv_close((uv_handle_t *) handle, NULL);
 
-    rc = uv_process_kill(&child, SIGTERM);
-    if (rc != 0)
-        fprintf(stderr, "uv_process_kill: %s\n", uv_strerror(rc));
+    cleanup();
 }
 
 static void on_timer(uv_timer_t *handle)
 {
-    int rc;
-
     fprintf(stderr, "timeout: no unexpected SIGCHLD observed\n");
 
     /*
@@ -63,9 +66,7 @@ static void on_timer(uv_timer_t *handle)
     uv_timer_stop(handle);
     uv_close((uv_handle_t *) handle, NULL);
 
-    rc = uv_process_kill(&child, SIGTERM);
-    if (rc != 0)
-        fprintf(stderr, "uv_process_kill: %s\n", uv_strerror(rc));
+    cleanup();
 }
 
 int main(void)

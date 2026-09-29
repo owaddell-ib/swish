@@ -8,52 +8,45 @@ static uv_process_t child;
 static uv_signal_t sigchld_watcher;
 static uv_timer_t timer;
 
-static int child_exited = 0;
+static int kill_requested = 0;
 static int unexpected_sigchld = 0;
 
 static void on_sigchld(uv_signal_t *handle, int signum)
 {
-    (void) handle;
     (void) signum;
 
     fprintf(stderr, "SIGCHLD callback invoked\n");
 
-    if (!child_exited) {
+    if (!kill_requested) {
         fprintf(stderr,
-                "UNEXPECTED: SIGCHLD arrived before requested child's exit_cb\n");
+                "UNEXPECTED: SIGCHLD arrived while requested child "
+                "should still be sleeping\n");
+
         unexpected_sigchld = 1;
+
+        /*
+         * We've demonstrated the behavior. Don't observe the SIGCHLD
+         * that will legitimately result from killing /bin/sleep later.
+         */
+        uv_signal_stop(handle);
+        uv_close((uv_handle_t *) handle, NULL);
     }
-}
-
-static void on_child_exit(uv_process_t *process,
-                          int64_t exit_status,
-                          int term_signal)
-{
-    child_exited = 1;
-
-    fprintf(stderr,
-            "requested child exit_cb: pid=%d status=%lld signal=%d\n",
-            process->pid,
-            (long long) exit_status,
-            term_signal);
-
-    uv_close((uv_handle_t *) process, NULL);
 }
 
 static void on_timer(uv_timer_t *handle)
 {
     int rc;
 
-    (void) handle;
-
     fprintf(stderr, "timer fired; terminating requested child\n");
+
+    kill_requested = 1;
 
     rc = uv_process_kill(&child, SIGTERM);
     if (rc != 0)
         fprintf(stderr, "uv_process_kill: %s\n", uv_strerror(rc));
 
-    uv_timer_stop(&timer);
-    uv_close((uv_handle_t *) &timer, NULL);
+    uv_timer_stop(handle);
+    uv_close((uv_handle_t *) handle, NULL);
 }
 
 int main(void)

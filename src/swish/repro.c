@@ -1,28 +1,38 @@
-#define _POSIX_C_SOURCE 200809L
-
-#include <errno.h>
 #include <signal.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 #include "uv.h"
 
-#define MAX_CHILDREN 2
+static uv_process_t child;
+static uv_signal_t sigchld_watcher;
+static uv_timer_t timer;
 
-static uv_process_t children[MAX_CHILDREN];
-static int child_count;
+static int child_exited = 0;
+static int unexpected_sigchld = 0;
 
-static sigset_t sigchld_set;
-static sigset_t old_sigmask;
+static void on_sigchld(uv_signal_t *handle, int signum)
+{
+    (void) handle;
+    (void) signum;
+
+    fprintf(stderr, "SIGCHLD callback invoked\n");
+
+    if (!child_exited) {
+        fprintf(stderr,
+                "UNEXPECTED: SIGCHLD arrived before requested child's exit_cb\n");
+        unexpected_sigchld = 1;
+    }
+}
 
 static void on_child_exit(uv_process_t *process,
                           int64_t exit_status,
                           int term_signal)
 {
+    child_exited = 1;
+
     fprintf(stderr,
-            "requested child exited: pid=%d status=%lld signal=%d\n",
+            "requested child exit_cb: pid=%d status=%lld signal=%d\n",
             process->pid,
             (long long) exit_status,
             term_signal);
@@ -30,77 +40,25 @@ static void on_child_exit(uv_process_t *process,
     uv_close((uv_handle_t *) process, NULL);
 }
 
-static const char *cld_code_name(int code)
+static void on_timer(uv_timer_t *handle)
 {
-    switch (code) {
-    case CLD_EXITED:    return "CLD_EXITED";
-    case CLD_KILLED:    return "CLD_KILLED";
-    case CLD_DUMPED:    return "CLD_DUMPED";
-    case CLD_STOPPED:   return "CLD_STOPPED";
-    case CLD_TRAPPED:   return "CLD_TRAPPED";
-    case CLD_CONTINUED: return "CLD_CONTINUED";
-    default:            return "unknown";
-    }
+    int rc;
+
+    (void) handle;
+
+    fprintf(stderr, "timer fired; terminating requested child\n");
+
+    rc = uv_process_kill(&child, SIGTERM);
+    if (rc != 0)
+        fprintf(stderr, "uv_process_kill: %s\n", uv_strerror(rc));
+
+    uv_timer_stop(&timer);
+    uv_close((uv_handle_t *) &timer, NULL);
 }
 
-static int is_requested_child(pid_t pid)
+int main(void)
 {
-    int i;
-
-    for (i = 0; i < child_count; i++) {
-        if (children[i].pid == pid)
-            return 1;
-    }
-
-    return 0;
-}
-
-static void check_for_sigchld(int spawn_number)
-{
-    struct timespec timeout;
-    siginfo_t info;
-    int sig;
-
-    /*
-     * Give a pending SIGCHLD a little time to become visible.
-     *
-     * SIGCHLD remains blocked, so if one occurred during uv_spawn()
-     * it cannot be consumed by libuv's signal handler before we inspect it.
-     */
-    timeout.tv_sec = 0;
-    timeout.tv_nsec = 500 * 1000 * 1000; /* 500 ms */
-
-    memset(&info, 0, sizeof(info));
-
-    errno = 0;
-    sig = sigtimedwait(&sigchld_set, &info, &timeout);
-
-    if (sig == -1) {
-        if (errno == EAGAIN) {
-            fprintf(stderr,
-                    "after spawn %d: no pending SIGCHLD\n",
-                    spawn_number);
-            return;
-        }
-
-        perror("sigtimedwait");
-        exit(1);
-    }
-
-    fprintf(stderr,
-            "after spawn %d: SIGCHLD pid=%d code=%s(%d) status=%d%s\n",
-            spawn_number,
-            (int) info.si_pid,
-            cld_code_name(info.si_code),
-            info.si_code,
-            info.si_status,
-            is_requested_child(info.si_pid)
-                ? " [REQUESTED CHILD]"
-                : " [OTHER CHILD]");
-}
-
-static void spawn_one(uv_loop_t *loop, int index)
-{
+    uv_loop_t *loop;
     uv_process_options_t options;
     char *args[] = {
         "/bin/sleep",
@@ -109,101 +67,68 @@ static void spawn_one(uv_loop_t *loop, int index)
     };
     int rc;
 
-    memset(&children[index], 0, sizeof(children[index]));
+    fprintf(stderr, "libuv version: %s\n", uv_version_string());
+
+    loop = uv_default_loop();
+
+    rc = uv_signal_init(loop, &sigchld_watcher);
+    if (rc != 0) {
+        fprintf(stderr, "uv_signal_init: %s\n", uv_strerror(rc));
+        return 1;
+    }
+
+    rc = uv_signal_start(&sigchld_watcher, on_sigchld, SIGCHLD);
+    if (rc != 0) {
+        fprintf(stderr, "uv_signal_start: %s\n", uv_strerror(rc));
+        return 1;
+    }
+
+    memset(&child, 0, sizeof(child));
     memset(&options, 0, sizeof(options));
 
     options.file = args[0];
     options.args = args;
     options.exit_cb = on_child_exit;
 
-    fprintf(stderr, "\ncalling uv_spawn() #%d\n", index + 1);
+    fprintf(stderr, "calling uv_spawn()\n");
 
-    rc = uv_spawn(loop, &children[index], &options);
+    rc = uv_spawn(loop, &child, &options);
     if (rc != 0) {
-        fprintf(stderr,
-                "uv_spawn #%d: %s\n",
-                index + 1,
-                uv_strerror(rc));
-        exit(1);
+        fprintf(stderr, "uv_spawn: %s\n", uv_strerror(rc));
+        return 1;
     }
-
-    child_count = index + 1;
 
     fprintf(stderr,
-            "uv_spawn #%d returned; requested child pid=%d\n",
-            index + 1,
-            children[index].pid);
-
-    check_for_sigchld(index + 1);
-}
-
-int main(int argc, char **argv)
-{
-    uv_loop_t *loop;
-    int spawn_count;
-    int i;
+            "uv_spawn returned; requested child pid=%d\n",
+            child.pid);
 
     /*
-     * Deliberately simple CLI:
-     *
-     *     ./repro 1
-     *     ./repro 2
+     * Give the event loop time to deliver any SIGCHLD generated during
+     * uv_spawn(), while the requested /bin/sleep should still be running.
      */
-    if (argc != 2 || (argv[1][0] != '1' && argv[1][0] != '2') ||
-        argv[1][1] != '\0') {
-        fprintf(stderr, "usage: %s 1|2\n", argv[0]);
-        return 2;
-    }
-
-    spawn_count = argv[1][0] - '0';
-
-    fprintf(stderr, "libuv version: %s\n", uv_version_string());
-    fprintf(stderr, "test process pid: %d\n", (int) getpid());
-    fprintf(stderr, "number of uv_spawn calls: %d\n", spawn_count);
-
-    /*
-     * Block SIGCHLD before libuv has an opportunity to spawn anything.
-     *
-     * The signal can still become pending. sigtimedwait() lets us consume
-     * it synchronously and, crucially, obtain siginfo_t.si_pid.
-     */
-    sigemptyset(&sigchld_set);
-    sigaddset(&sigchld_set, SIGCHLD);
-
-    if (sigprocmask(SIG_BLOCK, &sigchld_set, &old_sigmask) != 0) {
-        perror("sigprocmask(SIG_BLOCK)");
+    rc = uv_timer_init(loop, &timer);
+    if (rc != 0) {
+        fprintf(stderr, "uv_timer_init: %s\n", uv_strerror(rc));
         return 1;
     }
 
-    loop = uv_default_loop();
-
-    for (i = 0; i < spawn_count; i++)
-        spawn_one(loop, i);
-
-    /*
-     * Restore the normal signal mask before terminating our requested
-     * children. From this point on libuv can receive their SIGCHLDs and
-     * reap them normally.
-     */
-    if (sigprocmask(SIG_SETMASK, &old_sigmask, NULL) != 0) {
-        perror("sigprocmask(SIG_SETMASK)");
+    rc = uv_timer_start(&timer, on_timer, 500, 0);
+    if (rc != 0) {
+        fprintf(stderr, "uv_timer_start: %s\n", uv_strerror(rc));
         return 1;
-    }
-
-    fprintf(stderr, "\nterminating requested children\n");
-
-    for (i = 0; i < child_count; i++) {
-        int rc = uv_process_kill(&children[i], SIGTERM);
-
-        if (rc != 0)
-            fprintf(stderr,
-                    "uv_process_kill pid=%d: %s\n",
-                    children[i].pid,
-                    uv_strerror(rc));
     }
 
     uv_run(loop, UV_RUN_DEFAULT);
 
-    fprintf(stderr, "done\n");
-    return 0;
+    uv_signal_stop(&sigchld_watcher);
+    uv_close((uv_handle_t *) &sigchld_watcher, NULL);
+    uv_run(loop, UV_RUN_DEFAULT);
+
+    fprintf(stderr,
+            "RESULT: %s\n",
+            unexpected_sigchld
+                ? "unexpected SIGCHLD observed"
+                : "unexpected SIGCHLD not observed");
+
+    return unexpected_sigchld ? 0 : 2;
 }
